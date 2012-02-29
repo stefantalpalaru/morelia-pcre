@@ -14,8 +14,8 @@ def test_match(regex, opts, data):
         if opt in OPTIONS:
             options |= OPTIONS[opt]
     compiled = pcre_compile(regex, options)
-    extra = pcre_study(compiled, options)
-    result = pcre_exec(compiled, data, options, extra=extra)
+    extra = pcre_study(compiled)
+    result = pcre_exec(compiled, data, extra=extra)
     return result
 
 def main(*args):

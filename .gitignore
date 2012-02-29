@@ -5,6 +5,7 @@
 *.*~
 *.bak
 *.c
+*.h
 *.so
 build
 vim.session

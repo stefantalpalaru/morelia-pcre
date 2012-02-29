@@ -4,13 +4,14 @@ from pcre import *
 from pprint import pprint
 
 print pcre_version()
+options = 0 | PCRE_CASELESS
 pattern = r'(?<bob>f)(.)(?<jim>o)'
 #pattern = r'(xfo)o'
 print 'pattern = "%s"' % pattern
-compiled = pcre_compile(pattern)
+compiled = pcre_compile(pattern, options)
 #pprint(compiled)
 
-subject = 'barfoobazfoo'
+subject = 'barfoObazfoo'
 print 'subject = "%s"' % subject
 
 extra = pcre_study(compiled)
