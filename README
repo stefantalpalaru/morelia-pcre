@@ -1,2 +1,5 @@
 ./setup.py build_ext -i
 
+./testsuite.py testdata/testinput1 tmpout
+diff -u tmpout testdata/testoutput1 | less
+
