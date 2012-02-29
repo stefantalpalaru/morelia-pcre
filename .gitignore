@@ -1,0 +1,11 @@
+*.pyc
+*.pyo
+*.swp
+*.swo
+*.*~
+*.bak
+*.c
+*.so
+build
+vim.session
+tmp*
