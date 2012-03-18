@@ -32,7 +32,7 @@ def process_data(data):
     # escape unescaped '"'
     data = re.sub(r'\\0', '\\x00', data)
     data = re.sub(r'\\x([0-9][^0-9])', '\\x0\\1', data)
-    data = re.sub(r'\\x([0-9][^0-9])', '\\x0\\1', data)
+    data = re.sub(r'\\x([0-9][^0-9])', '\\x0\\1', data) # done twice for '\\x0\\x0'
     # eval
     data = eval('"""%s"""' % data)
     data = data.strip()
