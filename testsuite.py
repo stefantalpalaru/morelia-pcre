@@ -22,12 +22,17 @@ def test_match(regex, opts, data):
 
 def process_regex(regex):
     # handle C style escapes
+    regex = re.sub(r'\\0', '\\x00', regex)
+    regex = re.sub(r'\\x([0-9][^0-9])', '\\x0\\1', regex)
+    regex = re.sub('"', '\\"', regex)
     regex = eval('"""%s"""' % regex)
     return regex
 
 def process_data(data):
     # escape unescaped '"'
-    data = re.sub('[^\\\\]\("\)', '\\"', data)
+    data = re.sub(r'\\0', '\\x00', data)
+    data = re.sub(r'\\x([0-9][^0-9])', '\\x0\\1', data)
+    data = re.sub(r'\\x([0-9][^0-9])', '\\x0\\1', data)
     # eval
     data = eval('"""%s"""' % data)
     data = data.strip()
@@ -90,12 +95,20 @@ def main(*args):
         pprint([line_no, regex, opts, line])
         data = process_data(line)
         pprint([line_no, regex, opts, data])
-        result = test_match(regex, opts, data)
+        try:
+            result = test_match(regex, opts, data)
+        except Exception, e:
+            print 'error: ', e
         if result.num_matches:
             for i in xrange(result.num_matches):
-                out_file.write('%2d: %s\n' % (i, repr(result.matches[i])[1:-1]))
+                match = repr(result.matches[i])[1:-1]
+                line_out = '%2d: %s\n' % (i, match)
+                out_file.write(line_out)
+                print line_out,
         else:
-            out_file.write('No match\n')
+            line_out = 'No match\n'
+            out_file.write(line_out)
+            print line_out,
     # close files
     in_file.close()
     out_file.close()

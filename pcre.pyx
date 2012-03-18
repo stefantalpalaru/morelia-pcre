@@ -241,7 +241,7 @@ cpdef pcre_exec(Pcre re, char *subject, int options=0, PcreExtra extra=None, int
                 exec_result.matches.append(match_list[i])
             cpcre.pcre_free_substring_list(match_list)
 
-    # named substringss
+    # named substrings
     cpcre.pcre_fullinfo(re._c_pcre, extra._c_pcre_extra, PCRE_INFO_NAMECOUNT, &namecount)
     if namecount > 0:
         cpcre.pcre_fullinfo(re._c_pcre, extra._c_pcre_extra, PCRE_INFO_NAMETABLE, &name_table)
