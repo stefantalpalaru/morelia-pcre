@@ -11,9 +11,11 @@ PCRE_NOTBOL =             0x00000080  # Exec, DFA exec
 PCRE_NOTEOL =             0x00000100  # Exec, DFA exec 
 PCRE_UNGREEDY =           0x00000200  # Compile 
 PCRE_NOTEMPTY =           0x00000400  # Exec, DFA exec 
-PCRE_UTF8 =               0x00000800  # Compile, used in exec, DFA exec 
+PCRE_UTF8 =               0x00000800  # Compile (same as PCRE_UTF16)
+PCRE_UTF16 =              0x00000800  # Compile (same as PCRE_UTF8)
 PCRE_NO_AUTO_CAPTURE =    0x00001000  # Compile 
-PCRE_NO_UTF8_CHECK =      0x00002000  # Compile, exec, DFA exec 
+PCRE_NO_UTF8_CHECK =      0x00002000  # Compile (same as PCRE_NO_UTF16_CHECK)
+PCRE_NO_UTF16_CHECK =     0x00002000  # Compile (same as PCRE_NO_UTF8_CHECK)
 PCRE_AUTO_CALLOUT =       0x00004000  # Compile 
 PCRE_PARTIAL_SOFT =       0x00008000  # Exec, DFA exec 
 PCRE_PARTIAL =            0x00008000  # Backwards compatible synonym 
@@ -48,7 +50,9 @@ PCRE_ERROR_NOSUBSTRING =     (-7)
 PCRE_ERROR_MATCHLIMIT =      (-8)
 PCRE_ERROR_CALLOUT =         (-9)  # Never used by PCRE itself 
 PCRE_ERROR_BADUTF8 =        (-10)
+PCRE_ERROR_BADUTF16 =        (-10)
 PCRE_ERROR_BADUTF8_OFFSET = (-11)
+PCRE_ERROR_BADUTF16_OFFSET = (-11)
 PCRE_ERROR_PARTIAL =        (-12)
 PCRE_ERROR_BADPARTIAL =     (-13)
 PCRE_ERROR_INTERNAL =       (-14)
@@ -63,8 +67,12 @@ PCRE_ERROR_NULLWSLIMIT =    (-22)  # No longer actually used
 PCRE_ERROR_BADNEWLINE =     (-23)
 PCRE_ERROR_BADOFFSET =      (-24)
 PCRE_ERROR_SHORTUTF8 =      (-25)
+PCRE_ERROR_SHORTUTF16 =      (-25)
 PCRE_ERROR_RECURSELOOP =    (-26)
 PCRE_ERROR_JIT_STACKLIMIT = (-27)
+PCRE_ERROR_BADMODE =        (-28)
+PCRE_ERROR_BADENDIANNESS =  (-29)
+
 
 # Specific error codes for UTF-8 validity checks 
 
@@ -90,6 +98,14 @@ PCRE_UTF8_ERR18 =             18
 PCRE_UTF8_ERR19 =             19
 PCRE_UTF8_ERR20 =             20
 PCRE_UTF8_ERR21 =             21
+
+# Specific error codes for UTF-16 validity checks 
+
+PCRE_UTF16_ERR0 =              0
+PCRE_UTF16_ERR1 =              1
+PCRE_UTF16_ERR2 =              2
+PCRE_UTF16_ERR3 =              3
+PCRE_UTF16_ERR4 =              4
 
 # Request types for pcre_fullinfo() 
 
@@ -125,6 +141,8 @@ PCRE_CONFIG_UNICODE_PROPERTIES =      6
 PCRE_CONFIG_MATCH_LIMIT_RECURSION =   7
 PCRE_CONFIG_BSR =                     8
 PCRE_CONFIG_JIT =                     9
+PCRE_CONFIG_UTF16 =                  10
+PCRE_CONFIG_JITTARGET =              11
 
 # Request types for pcre_study(). Do not re-arrange, in order to remain compatible.
 

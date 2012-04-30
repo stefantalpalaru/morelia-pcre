@@ -23,7 +23,6 @@ cdef extern from "pcre.h":
     int pcre_get_stringtable_entries(pcre*, char *, char**, char**)
     int pcre_get_substring(char*, int*, int, int, char**)
     int pcre_get_substring_list(char*, int*, int, char***)
-    int pcre_info(pcre*, int*, int*)
     unsigned char* pcre_maketables()
     int pcre_refcount(pcre*, int)
     pcre_extra* pcre_study(pcre*, int, char**)
@@ -40,3 +39,4 @@ cdef extern from *:
     void pcre_stack_free(void*)
     int pcre_callout(pcre_callout_block*)
 
+# TODO: add UTF-16 data structures and functions

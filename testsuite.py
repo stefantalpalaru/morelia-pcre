@@ -28,14 +28,36 @@ def process_regex(regex):
     regex = eval('"""%s"""' % regex)
     return regex
 
+def process_regex2(regex):
+    # handle C style escapes
+    #regex = re.sub('"', '\\"', regex)
+    #regex = eval('"""%s"""' % regex)
+    print 'regex processing:'
+    pprint(regex)
+    #regex = re.sub(r'\\', r'\\\\', regex)
+    #regex = regex.decode('string_escape')
+    pprint(regex)
+    return regex
+
 def process_data(data):
-    # escape unescaped '"'
+    # fix escapes valid in C but invalid in python
     data = re.sub(r'\\0', '\\x00', data)
     data = re.sub(r'\\x([0-9][^0-9])', '\\x0\\1', data)
     data = re.sub(r'\\x([0-9][^0-9])', '\\x0\\1', data) # done twice for '\\x0\\x0'
     # eval
     data = eval('"""%s"""' % data)
     data = data.strip()
+    return data
+
+def process_data2(data):
+    # eval
+    #data = eval('"""%s"""' % data)
+    print 'data processing:'
+    pprint(data)
+    #data = re.sub(r'\\', r'\\\\', data)
+    #data = data.decode('string_escape')
+    data = data.strip()
+    pprint(data)
     return data
 
 def main(*args):
@@ -85,15 +107,17 @@ def main(*args):
                 regex = line[1:]
                 out_file.write(line)
                 continue
-            regex = process_regex(line[1:regex_end])
+            #regex = process_regex(line[1:regex_end])
+            regex = process_regex2(line[1:regex_end])
             opts = line[regex_end+1:-1]
             out_file.write(line)
             continue
         # it can be only data
         is_data = True
         out_file.write(line)
-        pprint([line_no, regex, opts, line])
-        data = process_data(line)
+        #pprint([line_no, regex, opts, line])
+        #data = process_data(line)
+        data = process_data2(line)
         pprint([line_no, regex, opts, data])
         try:
             result = test_match(regex, opts, data)
