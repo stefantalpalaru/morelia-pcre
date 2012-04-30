@@ -40,13 +40,18 @@ def process_regex2(regex):
     return regex
 
 def process_data(data):
+    print 'data processing:'
+    pprint(data)
     # fix escapes valid in C but invalid in python
     data = re.sub(r'\\0', '\\x00', data)
     data = re.sub(r'\\x([0-9][^0-9])', '\\x0\\1', data)
     data = re.sub(r'\\x([0-9][^0-9])', '\\x0\\1', data) # done twice for '\\x0\\x0'
+    data = re.sub(r'\\e', '\\x1b', data)
+    data = re.sub(r'\\\$', '$', data)
     # eval
     data = eval('"""%s"""' % data)
     data = data.strip()
+    pprint(data)
     return data
 
 def process_data2(data):
@@ -59,6 +64,14 @@ def process_data2(data):
     data = data.strip()
     pprint(data)
     return data
+
+def process_output(output):
+    output = repr(output)[1:-1]
+    output = re.sub(r'\\t', '\\x09', output)
+    output = re.sub(r'\\n', '\\x0a', output)
+    output = re.sub(r'\\r', '\\x0d', output)
+    output = re.sub(r'\\\\', r'\\', output)
+    return output
 
 def main(*args):
     in_file = open(args[0])
@@ -116,8 +129,8 @@ def main(*args):
         is_data = True
         out_file.write(line)
         #pprint([line_no, regex, opts, line])
-        #data = process_data(line)
-        data = process_data2(line)
+        data = process_data(line)
+        #data = process_data2(line)
         pprint([line_no, regex, opts, data])
         try:
             result = test_match(regex, opts, data)
@@ -125,7 +138,7 @@ def main(*args):
             print 'error: ', e
         if result.num_matches:
             for i in xrange(result.num_matches):
-                match = repr(result.matches[i])[1:-1]
+                match = process_output(result.matches[i])
                 line_out = '%2d: %s\n' % (i, match)
                 out_file.write(line_out)
                 print line_out,

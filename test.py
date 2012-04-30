@@ -6,15 +6,17 @@ from pprint import pprint
 print pcre_version()
 for pattern, subject, options in [
     [r'(?<bob>f)(.)(?<jim>o)', 'barfoObazfoo', 0 | PCRE_CASELESS],
-    ['abcd\t\n\r\x0c\x07\\e9;\\$\\\\?caxyz', 'abcd\t\n\r\x0c\x07\\e9;\\$\\?caxyz', 0],
+    ['abcd\\t\\n\\r\\f\\a\\e\\071\\x3b\\$\\\\\\?caxyz', 'abcd\\t\\n\\r\\f\\a\\e9;\\$\\\\?caxyz', 0],
+    [r'abcd\t\n\r\f\a\e\071\x3b\$\\\?caxyz', 'abcd\t\n\r\f\a\x1b9;\$\\?caxyz', 0],
+    [r'abcd\t\n\r\f\a\e\071\x3b\$\\\?caxyz', 'abcd\t\n\r\f\a\x1b9;$\\?caxyz', 0],
 ]:
-    print 'pattern = "%s"' % pattern
+    print 'pattern = "%r"' % pattern
     compiled = pcre_compile(pattern, options)
-    print 'subject = "%s"' % subject
+    print 'subject = "%r"' % subject
     extra = pcre_study(compiled)
     result = pcre_exec(compiled, subject, extra=extra)
     print '%d matches:' % result.num_matches
     for i in xrange(result.num_matches):
-        print ' "%s"' % result.matches[i]
+        print ' "%s"' % repr(result.matches[i])
     pprint(result.named_matches)
 
