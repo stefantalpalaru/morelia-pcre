@@ -8,6 +8,8 @@ import re
 OPTIONS = {
     'i': PCRE_CASELESS,
     'x': PCRE_EXTENDED,
+    's': PCRE_DOTALL,
+    'm': PCRE_MULTILINE,
 }
 
 def test_match(regex, opts, data):
@@ -21,47 +23,29 @@ def test_match(regex, opts, data):
     return result
 
 def process_regex(regex):
-    # handle C style escapes
-    regex = re.sub(r'\\0', '\\x00', regex)
-    regex = re.sub(r'\\x([0-9][^0-9])', '\\x0\\1', regex)
-    regex = re.sub('"', '\\"', regex)
-    regex = eval('"""%s"""' % regex)
-    return regex
-
-def process_regex2(regex):
-    # handle C style escapes
-    #regex = re.sub('"', '\\"', regex)
-    #regex = eval('"""%s"""' % regex)
     print 'regex processing:'
-    pprint(regex)
-    #regex = re.sub(r'\\', r'\\\\', regex)
-    #regex = regex.decode('string_escape')
     pprint(regex)
     return regex
 
 def process_data(data):
     print 'data processing:'
     pprint(data)
+    data = data.strip()
+    # strip trailing backslash if alone
+    if ((len(data) >= 2 and data[-2] != '\\') or (len(data) == 1)) and data[-1] == '\\':
+        data = data[:-1]
     # fix escapes valid in C but invalid in python
-    data = re.sub(r'\\0', '\\x00', data)
-    data = re.sub(r'\\x([0-9][^0-9])', '\\x0\\1', data)
-    data = re.sub(r'\\x([0-9][^0-9])', '\\x0\\1', data) # done twice for '\\x0\\x0'
+    data = re.sub(r'\\x([0-9][^0-9a-f])', '\\x0\\1', data)
+    data = re.sub(r'\\x([0-9][^0-9a-f])', '\\x0\\1', data) # done twice for '\\x0\\x0'
     data = re.sub(r'\\e', '\\x1b', data)
     data = re.sub(r'\\\$', '$', data)
+    # escape double quotes
+    data = re.sub(r'\\"', '\\x22', data)
+    data = re.sub(r'"', '\\x22', data)
+    # '@' doesn't need escaping
+    data = re.sub(r'\\@', '@', data)
     # eval
     data = eval('"""%s"""' % data)
-    data = data.strip()
-    pprint(data)
-    return data
-
-def process_data2(data):
-    # eval
-    #data = eval('"""%s"""' % data)
-    print 'data processing:'
-    pprint(data)
-    #data = re.sub(r'\\', r'\\\\', data)
-    #data = data.decode('string_escape')
-    data = data.strip()
     pprint(data)
     return data
 
@@ -96,12 +80,13 @@ def main(*args):
                 is_comment = True
             out_file.write(line)
             continue
-        if len(line) == 1:
+        if len(line) == 1 or len(line.strip()) == 0:
             # empty line
             is_data = False
             out_file.write(line)
             continue
         if multiline_regex:
+            out_file.write(line)
             regex_end = line.rfind('/')
             if not(regex_end == -1 or line[regex_end - 1] == '\\'):
                 # last regex line
@@ -120,8 +105,7 @@ def main(*args):
                 regex = line[1:]
                 out_file.write(line)
                 continue
-            #regex = process_regex(line[1:regex_end])
-            regex = process_regex2(line[1:regex_end])
+            regex = process_regex(line[1:regex_end])
             opts = line[regex_end+1:-1]
             out_file.write(line)
             continue
@@ -130,7 +114,6 @@ def main(*args):
         out_file.write(line)
         #pprint([line_no, regex, opts, line])
         data = process_data(line)
-        #data = process_data2(line)
         pprint([line_no, regex, opts, data])
         try:
             result = test_match(regex, opts, data)
@@ -139,6 +122,10 @@ def main(*args):
         if result.num_matches:
             for i in xrange(result.num_matches):
                 match = process_output(result.matches[i])
+                if len(match) == 0:
+                    if not result.set_matches[i]:
+                        # unset match
+                        match = '<unset>'
                 line_out = '%2d: %s\n' % (i, match)
                 out_file.write(line_out)
                 print line_out,

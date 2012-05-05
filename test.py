@@ -9,6 +9,10 @@ for pattern, subject, options in [
     ['abcd\\t\\n\\r\\f\\a\\e\\071\\x3b\\$\\\\\\?caxyz', 'abcd\\t\\n\\r\\f\\a\\e9;\\$\\\\?caxyz', 0],
     [r'abcd\t\n\r\f\a\e\071\x3b\$\\\?caxyz', 'abcd\t\n\r\f\a\x1b9;\$\\?caxyz', 0],
     [r'abcd\t\n\r\f\a\e\071\x3b\$\\\?caxyz', 'abcd\t\n\r\f\a\x1b9;$\\?caxyz', 0],
+    [r'foo@bar', 'foo\@bar', 0],
+    ['foo\\0bar', 'foo\0bar', 0],
+    ['foo\\0bar\\00baz', 'foo\0bar\00baz', 0],
+    ['abc\\0def\\00pqr\\000xyz\\0000AB', 'abc\0def\00pqr\000xyz\0000AB', 0],
 ]:
     print 'pattern = "%r"' % pattern
     compiled = pcre_compile(pattern, options)

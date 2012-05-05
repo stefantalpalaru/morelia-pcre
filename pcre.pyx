@@ -183,13 +183,20 @@ cdef class ExecResult:
         int result
         int num_matches
         bint captured_all
+        object set_matches # list of booleans indicaing if the corresponding 'matches' elements are set
         object matches
         object named_matches
     def __cinit__(self):
         self.num_matches = 0
         self.captured_all = 1
+        self.set_matches = []
         self.matches = []
         self.named_matches = {}
+
+cdef process_text(text):
+    if isinstance(text, unicode):
+        text = text.encode('UTF-8')
+    return text
 
 cpdef pcre_version():
     return cpcre.pcre_version()
@@ -219,14 +226,15 @@ cpdef pcre_study(Pcre re, int options=0):
     pcre_extra._c_pcre_extra = sd
     return pcre_extra
 
-cpdef pcre_exec(Pcre re, char *subject, int options=0, PcreExtra extra=None, int offset=0):
+cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offset=0):
+    subject = process_text(subject)
     cdef:
         int rc
         int subject_length = len(subject)
         int oveccount = 30
         int *ovector
         ExecResult exec_result = ExecResult()
-        char **match_list
+        char *match_ptr
         int res
         int capture_count
         int namecount
@@ -253,11 +261,13 @@ cpdef pcre_exec(Pcre re, char *subject, int options=0, PcreExtra extra=None, int
         exec_result.captured_all = 0
     if rc > 0:
         exec_result.num_matches = rc
-        res = cpcre.pcre_get_substring_list(subject, ovector, rc, &match_list)
-        if res == 0:
-            for i in range(rc):
-                exec_result.matches.append(match_list[i])
-            cpcre.pcre_free_substring_list(match_list)
+        for i in range(rc):
+            match_len = cpcre.pcre_get_substring(subject, ovector, rc, i, &match_ptr)
+            if match_len < 0:
+                raise Exception('error getting the match #%d' % i)
+            exec_result.matches.append(match_ptr[:match_len])
+            exec_result.set_matches.append(True if ovector[i * 2] >= 0 else False)
+            cpcre.pcre_free_substring(match_ptr)
 
     # named substrings
     cpcre.pcre_fullinfo(re._c_pcre, extra._c_pcre_extra, PCRE_INFO_NAMECOUNT, &namecount)
@@ -272,7 +282,6 @@ cpdef pcre_exec(Pcre re, char *subject, int options=0, PcreExtra extra=None, int
             if exec_result.num_matches > n:
                 exec_result.named_matches[substring_name] = exec_result.matches[n]
             tabptr += name_entry_size
-
 
     return exec_result
 
