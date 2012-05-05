@@ -1,3 +1,5 @@
+#cython: embedsignature=True
+
 cimport cpcre
 
 PCRE_CASELESS =           0x00000001  # Compile 

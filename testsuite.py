@@ -54,6 +54,7 @@ def process_output(output):
     output = re.sub(r'\\t', '\\x09', output)
     output = re.sub(r'\\n', '\\x0a', output)
     output = re.sub(r'\\r', '\\x0d', output)
+    output = re.sub(r'\\\'', '\'', output)
     output = re.sub(r'\\\\', r'\\', output)
     return output
 
