@@ -287,3 +287,42 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
 
     return exec_result
 
+cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int offset=0):
+    exec_results = []
+    cdef:
+        unsigned int option_bits
+        int utf8
+        int d
+        int crlf_is_newline
+
+    # Before running the loop, check for UTF-8 and whether CRLF is a valid newline
+    # sequence. First, find the options with which the regex was compiled; extract
+    # the UTF-8 state, and mask off all but the newline options.
+
+    cpcre.pcre_fullinfo(re._c_pcre, NULL, PCRE_INFO_OPTIONS, &option_bits);
+    utf8 = option_bits & PCRE_UTF8
+    option_bits &= PCRE_NEWLINE_CR|PCRE_NEWLINE_LF | PCRE_NEWLINE_CRLF | PCRE_NEWLINE_ANY | PCRE_NEWLINE_ANYCRLF
+
+    # If no newline options were set, find the default newline convention from the
+    # build configuration.
+    if option_bits == 0:
+        cpcre.pcre_config(PCRE_CONFIG_NEWLINE, &d)
+        print 'd = %d' % d
+        # Note that these values are always the ASCII ones, even in
+        # EBCDIC environments. CR = 13, NL = 10.
+        option_bits = PCRE_NEWLINE_CR if d == 13 else (
+            PCRE_NEWLINE_LF if d == 10 else (
+                PCRE_NEWLINE_CRLF if d == (13<<8 | 10) else (
+                    PCRE_NEWLINE_ANYCRLF if d == -2 else (
+                        PCRE_NEWLINE_ANY if d == -1 else 0
+                    )
+                )
+            )
+        )
+    #print 'utf8 = %d, option_bits = 0x%X' % (utf8, option_bits)
+
+    # See if CRLF is a valid newline sequence.
+    crlf_is_newline = option_bits == PCRE_NEWLINE_ANY or option_bits == PCRE_NEWLINE_CRLF or option_bits == PCRE_NEWLINE_ANYCRLF
+
+    return exec_results
+

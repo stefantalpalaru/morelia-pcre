@@ -24,3 +24,10 @@ for pattern, subject, options in [
         print ' "%s"' % repr(result.matches[i])
     pprint(result.named_matches)
 
+pattern = r'(?<bob>f)(.)(?<jim>o)'
+subject = 'barfoObazfoo'
+options = PCRE_CASELESS
+compiled = pcre_compile(pattern, options)
+extra = pcre_study(compiled)
+results = pcre_find_all(compiled, subject, extra=extra)
+
