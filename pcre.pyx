@@ -2,6 +2,16 @@
 
 cimport cpcre
 
+# Options. Some are compile-time only, some are run-time only, and some are
+# both, so we keep them all distinct. However, almost all the bits in the options
+# word are now used. In the long run, we may have to re-use some of the
+# compile-time only bits for runtime options, or vice versa. In the comments
+# below, "compile", "exec", and "DFA exec" mean that the option is permitted to
+# be set for those functions; "used in" means that an option may be set only for
+# compile, but is subsequently referenced in exec and/or DFA exec. Any of the
+# compile-time options may be inspected during studying (and therefore JIT
+# compiling).
+
 PCRE_CASELESS =           0x00000001  # Compile 
 PCRE_MULTILINE =          0x00000002  # Compile 
 PCRE_DOTALL =             0x00000004  # Compile 
@@ -166,6 +176,8 @@ cdef extern from "Python.h":
 
 cdef class Pcre:
     cdef cpcre.pcre *_c_pcre
+    def __cinit__(self):
+        self._c_pcre = NULL
     def __init__(self):
         raise TypeError("This class cannot be instantiated from Python")
     def __dealloc__(self):
@@ -174,6 +186,8 @@ cdef class Pcre:
 
 cdef class PcreExtra:
     cdef cpcre.pcre_extra *_c_pcre_extra
+    def __cinit__(self):
+        self._c_pcre_extra = NULL
     def __init__(self):
         raise TypeError("This class cannot be instantiated from Python")
     def __dealloc__(self):
@@ -181,6 +195,8 @@ cdef class PcreExtra:
             cpcre.pcre_free(self._c_pcre_extra)
 
 cdef class ExecResult:
+    cdef:
+        int *ovector
     cdef readonly:
         int result
         int num_matches
@@ -194,6 +210,10 @@ cdef class ExecResult:
         self.set_matches = []
         self.matches = []
         self.named_matches = {}
+        self.ovector = NULL
+    def __dealloc__(self):
+        if self.ovector is not NULL:
+            cpcre.pcre_free(self.ovector)
 
 cdef process_text(text):
     if isinstance(text, unicode):
@@ -258,6 +278,7 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
         extra = PcreExtra.__new__(PcreExtra)
     rc = cpcre.pcre_exec(re._c_pcre, extra._c_pcre_extra, subject, subject_length, offset, options, ovector, oveccount)
     exec_result.result = rc
+    exec_result.ovector = ovector
     if rc == 0:
         rc = oveccount / 3
         exec_result.captured_all = 0
@@ -288,12 +309,17 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
     return exec_result
 
 cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int offset=0):
+    subject = process_text(subject)
     exec_results = []
     cdef:
+        ExecResult exec_result = ExecResult()
         unsigned int option_bits
         int utf8
         int d
         int crlf_is_newline
+        int subject_length = len(subject)
+        int start_offset
+        int end_offset
 
     # Before running the loop, check for UTF-8 and whether CRLF is a valid newline
     # sequence. First, find the options with which the regex was compiled; extract
@@ -307,7 +333,7 @@ cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int o
     # build configuration.
     if option_bits == 0:
         cpcre.pcre_config(PCRE_CONFIG_NEWLINE, &d)
-        print 'd = %d' % d
+        #print 'd = %d' % d
         # Note that these values are always the ASCII ones, even in
         # EBCDIC environments. CR = 13, NL = 10.
         option_bits = PCRE_NEWLINE_CR if d == 13 else (
@@ -323,6 +349,61 @@ cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int o
 
     # See if CRLF is a valid newline sequence.
     crlf_is_newline = option_bits == PCRE_NEWLINE_ANY or option_bits == PCRE_NEWLINE_CRLF or option_bits == PCRE_NEWLINE_ANYCRLF
+
+    # look for the first match
+    exec_result = pcre_exec(re, subject, options, extra, offset)
+    if exec_result.num_matches > 0:
+        exec_results.append(exec_result)
+        end_offset = exec_result.ovector[1] # end of first match
+        # Loop for second and subsequent matches
+        while True:
+            options = 0 # clear any options
+            start_offset = end_offset # Start at end of previous match
+
+            # If the previous match was for an empty string, we are finished if we are
+            # at the end of the subject. Otherwise, arrange to run another match at the
+            # same point to see if a non-empty match can be found.
+            if exec_result.ovector[0] == exec_result.ovector[1]:
+                if exec_result.ovector[0] == subject_length:
+                    break
+                options = PCRE_NOTEMPTY_ATSTART | PCRE_ANCHORED
+
+            # Run the next matching operation
+            exec_result = pcre_exec(re, subject, options, extra, start_offset)
+            end_offset = exec_result.ovector[1]
+
+            # This time, a result of NOMATCH isn't an error. If the value in "options"
+            # is zero, it just means we have found all possible matches, so the loop ends.
+            # Otherwise, it means we have failed to find a non-empty-string match at a
+            # point where there was a previous empty-string match. In this case, we do what
+            # Perl does: advance the matching position by one character, and continue. We
+            # do this by setting the "end of previous match" offset, because that is picked
+            # up at the top of the loop as the point at which to start again.
+
+            # There are two complications: (a) When CRLF is a valid newline sequence, and
+            # the current position is just before it, advance by an extra byte. (b)
+            # Otherwise we must ensure that we skip an entire UTF-8 character if we are in
+            # UTF-8 mode.
+            
+            if exec_result.result == PCRE_ERROR_NOMATCH:
+                if options == 0:
+                    break                                   # All matches found
+                end_offset = start_offset + 1               # Advance one byte
+                                                            # If CRLF is newline & we are at CRLF,
+                if crlf_is_newline and \
+                   start_offset < subject_length - 1 and \
+                   subject[start_offset] == '\r' and \
+                   subject[start_offset + 1] == '\n':
+                    end_offset += 1                         # Advance by one more.
+                elif utf8:                                  # Otherwise, ensure we advance a whole UTF-8
+                    while end_offset < subject_length:      # character.
+                        if (subject[end_offset] & 0xc0) != 0x80:
+                            break
+                        end_offset += 1
+                continue # Go round the loop again
+
+            # Match succeded
+            exec_results.append(exec_result)
 
     return exec_results
 

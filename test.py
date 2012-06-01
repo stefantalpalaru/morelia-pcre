@@ -13,6 +13,7 @@ for pattern, subject, options in [
     ['foo\\0bar', 'foo\0bar', 0],
     ['foo\\0bar\\00baz', 'foo\0bar\00baz', 0],
     ['abc\\0def\\00pqr\\000xyz\\0000AB', 'abc\0def\00pqr\000xyz\0000AB', 0],
+    ['a.b', 'xaabcaxbaybzzzaaaBbbx', PCRE_CASELESS],
 ]:
     print 'pattern = "%r"' % pattern
     compiled = pcre_compile(pattern, options)
@@ -23,11 +24,11 @@ for pattern, subject, options in [
     for i in xrange(result.num_matches):
         print ' "%s"' % repr(result.matches[i])
     pprint(result.named_matches)
-
-pattern = r'(?<bob>f)(.)(?<jim>o)'
-subject = 'barfoObazfoo'
-options = PCRE_CASELESS
-compiled = pcre_compile(pattern, options)
-extra = pcre_study(compiled)
-results = pcre_find_all(compiled, subject, extra=extra)
+    # find all
+    results = pcre_find_all(compiled, subject, extra=extra)
+    if len(results) > 1:
+        print '*** find all ***'
+        for result in results:
+            for i in xrange(result.num_matches):
+                print ' "%s"' % repr(result.matches[i])
 
