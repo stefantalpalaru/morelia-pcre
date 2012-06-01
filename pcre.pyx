@@ -201,13 +201,17 @@ cdef class ExecResult:
         int result
         int num_matches
         bint captured_all
-        object set_matches # list of booleans indicaing if the corresponding 'matches' elements are set
+        object set_matches # list of booleans indicating if the corresponding 'matches' elements are set
+        object start_offsets
+        object end_offsets
         object matches
         object named_matches
     def __cinit__(self):
         self.num_matches = 0
         self.captured_all = 1
         self.set_matches = []
+        self.start_offsets = []
+        self.end_offsets = []
         self.matches = []
         self.named_matches = {}
         self.ovector = NULL
@@ -290,6 +294,8 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
                 raise Exception('error getting the match #%d' % i)
             exec_result.matches.append(match_ptr[:match_len])
             exec_result.set_matches.append(True if ovector[i * 2] >= 0 else False)
+            exec_result.start_offsets.append(ovector[i * 2])
+            exec_result.end_offsets.append(ovector[i * 2 + 1])
             cpcre.pcre_free_substring(match_ptr)
 
     # named substrings
@@ -401,6 +407,10 @@ cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int o
                             break
                         end_offset += 1
                 continue # Go round the loop again
+
+            # Other matching errors are not recoverable.
+            if exec_result.result < 0:
+                break
 
             # Match succeded
             exec_results.append(exec_result)

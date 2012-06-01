@@ -12,15 +12,30 @@ OPTIONS = {
     'm': PCRE_MULTILINE,
 }
 
+FIND_ALL = False
+SHOW_REST = False
+
 def test_match(regex, opts, data):
+    global FIND_ALL
+    FIND_ALL = False
+    global SHOW_REST
+    SHOW_REST = False
     options = 0
     for opt in list(opts):
         if opt in OPTIONS:
             options |= OPTIONS[opt]
+        elif opt == 'g':
+            FIND_ALL = True
+        elif opt == '+':
+            SHOW_REST = True
     compiled = pcre_compile(regex, options)
     extra = pcre_study(compiled)
-    result = pcre_exec(compiled, data, extra=extra)
-    return result
+    if FIND_ALL:
+        results = pcre_find_all(compiled, data, extra=extra)
+    else:
+        result = pcre_exec(compiled, data, extra=extra)
+        results = [result]
+    return results
 
 def process_regex(regex):
     print 'regex processing:'
@@ -117,23 +132,28 @@ def main(*args):
         data = process_data(line)
         pprint([line_no, regex, opts, data])
         try:
-            result = test_match(regex, opts, data)
+            results = test_match(regex, opts, data)
         except Exception, e:
             print 'error: ', e
-        if result.num_matches:
-            for i in xrange(result.num_matches):
-                match = process_output(result.matches[i])
-                if len(match) == 0:
-                    if not result.set_matches[i]:
-                        # unset match
-                        match = '<unset>'
-                line_out = '%2d: %s\n' % (i, match)
+        for result in results:
+            if result.num_matches:
+                for i in xrange(result.num_matches):
+                    match = process_output(result.matches[i])
+                    if len(match) == 0:
+                        if not result.set_matches[i]:
+                            # unset match
+                            match = '<unset>'
+                    line_out = '%2d: %s\n' % (i, match)
+                    out_file.write(line_out)
+                    print line_out,
+                    if SHOW_REST:
+                        line_out = '%2d+ %s\n' % (i, data[result.end_offsets[i]:])
+                        out_file.write(line_out)
+                        print line_out,
+            else:
+                line_out = 'No match\n'
                 out_file.write(line_out)
                 print line_out,
-        else:
-            line_out = 'No match\n'
-            out_file.write(line_out)
-            print line_out,
     # close files
     in_file.close()
     out_file.close()
