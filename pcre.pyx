@@ -356,64 +356,61 @@ cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int o
     # See if CRLF is a valid newline sequence.
     crlf_is_newline = option_bits == PCRE_NEWLINE_ANY or option_bits == PCRE_NEWLINE_CRLF or option_bits == PCRE_NEWLINE_ANYCRLF
 
-    # look for the first match
-    exec_result = pcre_exec(re, subject, options, extra, offset)
-    if exec_result.num_matches > 0:
+    not_empty_options = 0
+    end_offset = offset
+    while True:
+        start_offset = end_offset # Start at end of previous match
+        # Run the matching operation
+        exec_result = pcre_exec(re, subject, options | not_empty_options, extra, start_offset)
+
+        end_offset = exec_result.ovector[1]
+
+        # This time, a result of NOMATCH isn't an error. If the value in "not_empty_options"
+        # is zero, it just means we have found all possible matches, so the loop ends.
+        # Otherwise, it means we have failed to find a non-empty-string match at a
+        # point where there was a previous empty-string match. In this case, we do what
+        # Perl does: advance the matching position by one character, and continue. We
+        # do this by setting the "end of previous match" offset, because that is picked
+        # up at the top of the loop as the point at which to start again.
+
+        # There are two complications: (a) When CRLF is a valid newline sequence, and
+        # the current position is just before it, advance by an extra byte. (b)
+        # Otherwise we must ensure that we skip an entire UTF-8 character if we are in
+        # UTF-8 mode.
+        
+        if exec_result.result == PCRE_ERROR_NOMATCH:
+            if not_empty_options == 0:
+                break                                   # All matches found
+            end_offset = start_offset + 1               # Advance one byte
+            not_empty_options = 0
+                                                        # If CRLF is newline & we are at CRLF,
+            if crlf_is_newline and \
+               start_offset < subject_length - 1 and \
+               subject[start_offset] == '\r' and \
+               subject[start_offset + 1] == '\n':
+                end_offset += 1                         # Advance by one more.
+            elif utf8:                                  # Otherwise, ensure we advance a whole UTF-8
+                while end_offset < subject_length:      # character.
+                    if (subject[end_offset] & 0xc0) != 0x80:
+                        break
+                    end_offset += 1
+            continue # Go round the loop again
+
+        # Other matching errors are not recoverable.
+        if exec_result.result < 0:
+            break
+
+        # Match succeded
         exec_results.append(exec_result)
-        end_offset = exec_result.ovector[1] # end of first match
-        # Loop for second and subsequent matches
-        while True:
-            options = 0 # clear any options
-            start_offset = end_offset # Start at end of previous match
 
-            # If the previous match was for an empty string, we are finished if we are
-            # at the end of the subject. Otherwise, arrange to run another match at the
-            # same point to see if a non-empty match can be found.
-            if exec_result.ovector[0] == exec_result.ovector[1]:
-                if exec_result.ovector[0] == subject_length:
-                    break
-                options = PCRE_NOTEMPTY_ATSTART | PCRE_ANCHORED
-
-            # Run the next matching operation
-            exec_result = pcre_exec(re, subject, options, extra, start_offset)
-            end_offset = exec_result.ovector[1]
-
-            # This time, a result of NOMATCH isn't an error. If the value in "options"
-            # is zero, it just means we have found all possible matches, so the loop ends.
-            # Otherwise, it means we have failed to find a non-empty-string match at a
-            # point where there was a previous empty-string match. In this case, we do what
-            # Perl does: advance the matching position by one character, and continue. We
-            # do this by setting the "end of previous match" offset, because that is picked
-            # up at the top of the loop as the point at which to start again.
-
-            # There are two complications: (a) When CRLF is a valid newline sequence, and
-            # the current position is just before it, advance by an extra byte. (b)
-            # Otherwise we must ensure that we skip an entire UTF-8 character if we are in
-            # UTF-8 mode.
-            
-            if exec_result.result == PCRE_ERROR_NOMATCH:
-                if options == 0:
-                    break                                   # All matches found
-                end_offset = start_offset + 1               # Advance one byte
-                                                            # If CRLF is newline & we are at CRLF,
-                if crlf_is_newline and \
-                   start_offset < subject_length - 1 and \
-                   subject[start_offset] == '\r' and \
-                   subject[start_offset + 1] == '\n':
-                    end_offset += 1                         # Advance by one more.
-                elif utf8:                                  # Otherwise, ensure we advance a whole UTF-8
-                    while end_offset < subject_length:      # character.
-                        if (subject[end_offset] & 0xc0) != 0x80:
-                            break
-                        end_offset += 1
-                continue # Go round the loop again
-
-            # Other matching errors are not recoverable.
-            if exec_result.result < 0:
+        # If the previous match was for an empty string, we are finished if we are
+        # at the end of the subject. Otherwise, arrange to run another match at the
+        # same point to see if a non-empty match can be found.
+        not_empty_options = 0
+        if exec_result.ovector[0] == exec_result.ovector[1]:
+            if exec_result.ovector[0] == subject_length:
                 break
-
-            # Match succeded
-            exec_results.append(exec_result)
+            not_empty_options = PCRE_NOTEMPTY_ATSTART | PCRE_ANCHORED
 
     return exec_results
 

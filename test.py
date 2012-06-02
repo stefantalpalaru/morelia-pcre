@@ -14,6 +14,8 @@ for pattern, subject, options in [
     ['foo\\0bar\\00baz', 'foo\0bar\00baz', 0],
     ['abc\\0def\\00pqr\\000xyz\\0000AB', 'abc\0def\00pqr\000xyz\0000AB', 0],
     ['a.b', 'xaabcaxbaybzzzaaaBbbx', PCRE_CASELESS],
+    ['\\b', 'abc', 0],
+    ['', 'abc', 0],
 ]:
     print 'pattern = "%r"' % pattern
     compiled = pcre_compile(pattern, options)
