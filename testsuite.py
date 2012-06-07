@@ -76,12 +76,14 @@ def process_output(output):
 def main(*args):
     in_file = open(args[0])
     out_file = open(args[1], 'w')
+    state = ''
     is_comment = False
     is_data = False
     regex = ''
     multiline_regex = False
     opt = ''
     line_no = 0
+    sep = '' # regex separator
     for line in in_file:
         line_no += 1
         if is_comment:
@@ -103,7 +105,7 @@ def main(*args):
             continue
         if multiline_regex:
             out_file.write(line)
-            regex_end = line.rfind('/')
+            regex_end = line.rfind(sep)
             if not(regex_end == -1 or line[regex_end - 1] == '\\'):
                 # last regex line
                 regex += line[1:regex_end]
@@ -113,9 +115,10 @@ def main(*args):
             else:
                 regex += line
             continue
-        if line[0] == '/':
+        if line[0] != ' ':
             # regex
-            regex_end = line.rfind('/')
+            sep = line[0]
+            regex_end = line.rfind(sep)
             if regex_end in [-1, 0] or line[regex_end - 1] == '\\':
                 multiline_regex = True
                 regex = line[1:]
