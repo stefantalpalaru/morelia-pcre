@@ -1,4 +1,10 @@
-./setup.py build_ext -i
+morelia-pcre is a Python binding for the Perl Compatible Regular Expressions (PCRE) library. It's created using cython and it strives for completeness.
 
+Why 'morelia-pcre'? Because 'python-pcre' was taken :-)
+
+Testing:
+./setup.py build_ext -i
 ./testsuite.py testdata/testinput1 testdata/testoutput1 | less
+
+Code and issue tracker available at: https://github.com/stefantalpalaru/morelia-pcre
 
