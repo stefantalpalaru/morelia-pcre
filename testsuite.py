@@ -17,6 +17,9 @@ class Tester:
     testinput_line_no = 0
     testoutput_line_no = 0
     failed_tests = 0
+    last_regex = ''
+    last_opts = ''
+    last_data = ''
 
     def process_data(self, data):
         #print 'data processing:'
@@ -52,6 +55,9 @@ class Tester:
     def test_match(self, regex, opts, data):
         self.find_all = False
         self.show_rest = False
+        self.last_regex = regex
+        self.last_opts = opts
+        self.last_data = data
         options = 0
         for opt in list(opts):
             if opt in self.options:
@@ -76,33 +82,21 @@ class Tester:
             self.failed_tests += 1
             print 'error: testinput line %d, testoutput line %d' % (self.testinput_line_no, self.testoutput_line_no)
             print 'expected:\n%sgot:\n%s' % (output_line, line)
+            print 'regex:\n"%s"\nopts:\n"%s"\ndata:\n"%s"\n' % (self.last_regex, self.last_opts, self.last_data)
 
 def main(*args):
     tester = Tester()
     tester.testinput = open(args[0])
     tester.testoutput = open(args[1])
-    state = '' # 'comment', 'empty line', 'regex', 'data'
+    state = 'start' # 'start', 'empty line', 'regex', 'data'
     regex = ''
     multiline_regex = False
-    opt = ''
+    opts = ''
+    data = ''
 
     sep = '' # regex separator
     for line in tester.testinput:
         tester.testinput_line_no += 1
-        if state == 'comment':
-            # inside a comment
-            if line[-4:] == '--/\n':
-                state = ''
-            #out_file.write(line)
-            tester.verify_output(line)
-            continue
-        if len(line) > 3 and line[:3] == '/--':
-            # the start of a comment
-            if line[-4:] != '--/\n':
-                state = 'comment'
-            #out_file.write(line)
-            tester.verify_output(line)
-            continue
         if len(line) == 1 or len(line.strip()) == 0:
             # empty line
             state = 'empty line'
@@ -115,13 +109,13 @@ def main(*args):
             regex_end = line.rfind(sep)
             if not(regex_end == -1 or line[regex_end - 1] == '\\'):
                 # last regex line
-                regex += line[1:regex_end]
+                regex += line[:regex_end]
                 opts = line[regex_end+1:-1]
                 multiline_regex = False
             else:
                 regex += line
             continue
-        if line[0] != ' ' and state == 'empty line':
+        if line[0] != ' ' and state in ('start', 'empty line'):
             # regex
             state = 'regex'
             sep = line[0]
