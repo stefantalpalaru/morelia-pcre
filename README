@@ -9,3 +9,5 @@ Testing:
 Code and issue tracker available at: https://github.com/stefantalpalaru/morelia-pcre
 Tested with pcre-8.30 and python-2.7.3
 
+Sphinx docs: http://stefantalpalaru.github.com/morelia-pcre/intro.html
+
