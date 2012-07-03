@@ -192,7 +192,7 @@ cdef class PcreExtra:
         raise TypeError("This class cannot be instantiated from Python")
     def __dealloc__(self):
         if self._c_pcre_extra is not NULL:
-            cpcre.pcre_free(self._c_pcre_extra)
+            cpcre.pcre_free_study(self._c_pcre_extra)
 
 cdef class ExecResult:
     cdef:
