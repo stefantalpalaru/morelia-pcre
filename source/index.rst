@@ -12,6 +12,7 @@ morelia-pcre
    intro
    download
 
+.. disable this for now
 .. Indices and tables
 .. ==================
 
