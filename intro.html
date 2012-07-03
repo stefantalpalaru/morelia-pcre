@@ -1,0 +1,154 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Introduction &mdash; morelia-pcre 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="morelia-pcre 0.1 documentation" href="index.html" />
+    <link rel="prev" title="morelia-pcre" href="index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="index.html" title="morelia-pcre"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">morelia-pcre 0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="introduction">
+<h1>Introduction<a class="headerlink" href="#introduction" title="Permalink to this headline">¶</a></h1>
+<p>For a long time, Python programmers have secretly envied Perl monks for their miraculous regex spells. The &#8216;re&#8217; module was offering little comfort and the various replacements never came close. It is time to bow our heads in awe and accepts the one true reusable incarnation: <a class="reference external" href="http://www.pcre.org">Perl Compatible Regular Expressions (PCRE)</a>.</p>
+<p><a class="reference external" href="https://github.com/stefantalpalaru/morelia-pcre">morelia-pcre</a> is a set of Python bindings to PCRE, created using <a class="reference external" href="http://www.cython.org">Cython</a> for hackability and performance.</p>
+<div class="section" id="short-example">
+<h2>Short Example<a class="headerlink" href="#short-example" title="Permalink to this headline">¶</a></h2>
+<p>Here we go:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="kn">import</span> <span class="nn">pcre</span>
+<span class="kn">from</span> <span class="nn">pprint</span> <span class="kn">import</span> <span class="n">pprint</span>
+
+<span class="n">pattern</span> <span class="o">=</span> <span class="s">r&#39;(?&lt;sna&gt;fo{2})b&#39;</span>
+<span class="n">subject</span> <span class="o">=</span> <span class="s">&#39;foobar FoObaz&#39;</span>
+<span class="n">options</span> <span class="o">=</span> <span class="n">pcre</span><span class="o">.</span><span class="n">PCRE_CASELESS</span>
+
+<span class="n">compiled</span> <span class="o">=</span> <span class="n">pcre</span><span class="o">.</span><span class="n">pcre_compile</span><span class="p">(</span><span class="n">pattern</span><span class="p">,</span> <span class="n">options</span><span class="p">)</span>
+<span class="n">extra</span> <span class="o">=</span> <span class="n">pcre</span><span class="o">.</span><span class="n">pcre_study</span><span class="p">(</span><span class="n">compiled</span><span class="p">)</span>
+<span class="n">result</span> <span class="o">=</span> <span class="n">pcre</span><span class="o">.</span><span class="n">pcre_exec</span><span class="p">(</span><span class="n">compiled</span><span class="p">,</span> <span class="n">subject</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="n">extra</span><span class="p">)</span>
+
+<span class="c"># find the first match</span>
+<span class="k">print</span><span class="p">(</span><span class="s">&#39;</span><span class="si">%d</span><span class="s"> matches:&#39;</span> <span class="o">%</span> <span class="n">result</span><span class="o">.</span><span class="n">num_matches</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">num_matches</span><span class="p">):</span>
+    <span class="k">print</span><span class="p">(</span><span class="s">&#39; &quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="nb">repr</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">matches</span><span class="p">[</span><span class="n">i</span><span class="p">]))</span>
+<span class="k">print</span><span class="p">(</span><span class="s">&#39;named substrings:&#39;</span><span class="p">)</span>
+<span class="n">pprint</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">named_matches</span><span class="p">)</span>
+
+<span class="c"># find all the matches</span>
+<span class="n">results</span> <span class="o">=</span> <span class="n">pcre</span><span class="o">.</span><span class="n">pcre_find_all</span><span class="p">(</span><span class="n">compiled</span><span class="p">,</span> <span class="n">subject</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="n">extra</span><span class="p">)</span>
+<span class="k">print</span> <span class="s">&#39;*** find all ***&#39;</span>
+<span class="k">for</span> <span class="n">result</span> <span class="ow">in</span> <span class="n">results</span><span class="p">:</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">num_matches</span><span class="p">):</span>
+        <span class="k">print</span><span class="p">(</span><span class="s">&#39; &quot;</span><span class="si">%s</span><span class="s">&quot;&#39;</span> <span class="o">%</span> <span class="nb">repr</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">matches</span><span class="p">[</span><span class="n">i</span><span class="p">]))</span>
+</pre></div>
+</div>
+<p>And the output:</p>
+<div class="highlight-python"><pre>2 matches:
+ "'foob'"
+ "'foo'"
+named substrings:
+{'sna': 'foo'}
+*** find all ***
+ "'foob'"
+ "'foo'"
+ "'FoOb'"
+ "'FoO'"</pre>
+</div>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Introduction</a><ul>
+<li><a class="reference internal" href="#short-example">Short Example</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="index.html"
+                        title="previous chapter">morelia-pcre</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/intro.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="index.html" title="morelia-pcre"
+             >previous</a> |</li>
+        <li><a href="index.html">morelia-pcre 0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2012, Stefan Talpalaru.
+      Created using <a href="http://sphinx.pocoo.org/">Sphinx</a> 1.1.3.
+    </div>
+  </body>
+</html>
