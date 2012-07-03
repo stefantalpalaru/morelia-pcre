@@ -7,4 +7,5 @@ Testing:
 ./testsuite.py testdata/testinput1 testdata/testoutput1 | less
 
 Code and issue tracker available at: https://github.com/stefantalpalaru/morelia-pcre
+Tested with pcre-8.30 and python-2.7.3
 
