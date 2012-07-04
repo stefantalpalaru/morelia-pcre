@@ -1,4 +1,4 @@
-morelia-pcre is a Python binding for the Perl Compatible Regular Expressions (PCRE) library. It's created using Cython and it strives for completeness.
+morelia-pcre is a set of Python bindings for the Perl Compatible Regular Expressions (PCRE) library. It's created using Cython and it strives for completeness.
 
 Why 'morelia-pcre'? Because 'python-pcre' was taken :-)
 
