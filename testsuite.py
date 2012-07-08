@@ -11,7 +11,8 @@ class Tester:
         'x': PCRE_EXTENDED,
         's': PCRE_DOTALL,
         'm': PCRE_MULTILINE,
-    }
+    } # recognized options
+    set_options = 0
     find_all = False
     show_rest = False
     testinput_line_no = 0
@@ -38,6 +39,20 @@ class Tester:
         data = re.sub(r'"', '\\x22', data)
         # '@' doesn't need escaping
         data = re.sub(r'\\@', '@', data)
+        ### option setting
+        self.set_options = 0
+        # \A
+        opt_pat = r'([^\\]?)\\A'
+        match = re.search(opt_pat, data)
+        if match:
+            self.set_options |= PCRE_ANCHORED
+            data = re.sub(opt_pat, '\\1', data)
+        # \B
+        opt_pat = r'([^\\]?)\\B'
+        match = re.search(opt_pat, data)
+        if match:
+            self.set_options |= PCRE_NOTBOL
+            data = re.sub(opt_pat, '\\1', data)
         # eval
         data = eval('"""%s"""' % data)
         #pprint(data)
@@ -58,20 +73,22 @@ class Tester:
         self.last_regex = regex
         self.last_opts = opts
         self.last_data = data
-        options = 0
+        self.set_options = 0
         for opt in list(opts):
             if opt in self.options:
-                options |= self.options[opt]
+                self.set_options |= self.options[opt]
             elif opt == 'g':
                 self.find_all = True
             elif opt == '+':
                 self.show_rest = True
-        compiled = pcre_compile(regex, options)
+        compiled = pcre_compile(regex, self.set_options)
         extra = pcre_study(compiled)
+        # process the data after compilation and study so exec-only options can be added now
+        self.data = self.process_data(data)
         if self.find_all:
-            results = pcre_find_all(compiled, data, extra=extra)
+            results = pcre_find_all(compiled, self.data, extra=extra)
         else:
-            result = pcre_exec(compiled, data, extra=extra)
+            result = pcre_exec(compiled, self.data, extra=extra)
             results = [result]
         return results
 
@@ -136,10 +153,10 @@ def main(*args):
         #out_file.write(line)
         tester.verify_output(line)
         #pprint([line_no, regex, opts, line])
-        data = tester.process_data(line)
         #pprint([line_no, regex, opts, data])
         try:
-            results = tester.test_match(regex, opts, data)
+            results = tester.test_match(regex, opts, line)
+            data = tester.data # the processed data
         except Exception, e:
             print 'error: ', e
         for result in results:
