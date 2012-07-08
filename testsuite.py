@@ -11,6 +11,7 @@ class Tester:
         'x': PCRE_EXTENDED,
         's': PCRE_DOTALL,
         'm': PCRE_MULTILINE,
+        'J': PCRE_DUPNAMES,
     } # recognized options
     set_options = 0
     find_all = False
