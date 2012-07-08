@@ -171,7 +171,7 @@ def main(*args):
                     #out_file.write(line_out)
                     tester.verify_output(line_out)
                     #print line_out,
-                    if tester.show_rest:
+                    if tester.show_rest and i == 0:
                         line_out = '%2d+ %s\n' % (i, data[result.end_offsets[i]:])
                         #out_file.write(line_out)
                         tester.verify_output(line_out)
