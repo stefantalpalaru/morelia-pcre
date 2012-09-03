@@ -193,10 +193,19 @@ cdef class PcreExtra:
     def __dealloc__(self):
         if self._c_pcre_extra is not NULL:
             cpcre.pcre_free_study(self._c_pcre_extra)
+    property flags:
+        def __get__(self):
+            if self._c_pcre_extra is NULL:
+                return 0
+            return self._c_pcre_extra.flags
+        def __set__(self, value):
+            if self._c_pcre_extra is not NULL:
+                self._c_pcre_extra.flags = value
 
 cdef class ExecResult:
     cdef:
         int *ovector
+        public unsigned char *markptr
     cdef readonly:
         int result
         int num_matches
@@ -215,9 +224,15 @@ cdef class ExecResult:
         self.matches = []
         self.named_matches = {}
         self.ovector = NULL
+        self.markptr = NULL
     def __dealloc__(self):
         if self.ovector is not NULL:
             cpcre.pcre_free(self.ovector)
+    property mark:
+        def __get__(self):
+            if self.markptr is NULL:
+                return None
+            return self.markptr
 
 cdef process_text(text):
     if isinstance(text, unicode):
@@ -269,6 +284,13 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
         char *tabptr
         int i, n
 
+    if extra is None:
+        extra = PcreExtra.__new__(PcreExtra)
+
+    # mark handling
+    if extra._c_pcre_extra is not NULL and extra._c_pcre_extra.flags & PCRE_EXTRA_MARK:
+        extra._c_pcre_extra.mark = &exec_result.markptr
+
     # replace the default with (the actual number of capturing subpatterns + 1) * 3
     res = cpcre.pcre_fullinfo(re._c_pcre, extra._c_pcre_extra, PCRE_INFO_CAPTURECOUNT, &capture_count)
     if res == 0:
@@ -278,8 +300,6 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
     if ovector is NULL:
         raise MemoryError()
 
-    if extra is None:
-        extra = PcreExtra.__new__(PcreExtra)
     rc = cpcre.pcre_exec(re._c_pcre, extra._c_pcre_extra, subject, subject_length, offset, options, ovector, oveccount)
     exec_result.result = rc
     exec_result.ovector = ovector

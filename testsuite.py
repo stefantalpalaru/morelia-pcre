@@ -13,9 +13,6 @@ class Tester:
         'm': PCRE_MULTILINE,
         'J': PCRE_DUPNAMES,
     } # recognized options
-    set_options = 0
-    find_all = False
-    show_rest = False
     testinput_line_no = 0
     testoutput_line_no = 0
     failed_tests = 0
@@ -71,6 +68,7 @@ class Tester:
     def test_match(self, regex, opts, data):
         self.find_all = False
         self.show_rest = False
+        self.do_mark = False
         self.last_regex = regex
         self.last_opts = opts
         self.last_data = data
@@ -82,8 +80,12 @@ class Tester:
                 self.find_all = True
             elif opt == '+':
                 self.show_rest = True
+            elif opt == 'K':
+                self.do_mark = True
         compiled = pcre_compile(regex, self.set_options)
         extra = pcre_study(compiled)
+        if self.do_mark:
+            extra.flags |= PCRE_EXTRA_MARK
         # process the data after compilation and study so exec-only options can be added now
         self.data = self.process_data(data)
         if self.find_all:
@@ -118,11 +120,9 @@ def main(*args):
         if len(line) == 1 or len(line.strip()) == 0:
             # empty line
             state = 'empty line'
-            #out_file.write(line)
             tester.verify_output(line)
             continue
         if multiline_regex:
-            #out_file.write(line)
             tester.verify_output(line)
             regex_end = line.rfind(sep)
             if not(regex_end == -1 or line[regex_end - 1] == '\\'):
@@ -141,20 +141,15 @@ def main(*args):
             if regex_end in [-1, 0] or line[regex_end - 1] == '\\':
                 multiline_regex = True
                 regex = line[1:]
-                #out_file.write(line)
                 tester.verify_output(line)
                 continue
             regex = line[1:regex_end]
             opts = line[regex_end+1:-1]
-            #out_file.write(line)
             tester.verify_output(line)
             continue
         # it can be only data
         state = 'data'
-        #out_file.write(line)
         tester.verify_output(line)
-        #pprint([line_no, regex, opts, line])
-        #pprint([line_no, regex, opts, data])
         try:
             results = tester.test_match(regex, opts, line)
             data = tester.data # the processed data
@@ -169,21 +164,22 @@ def main(*args):
                             # unset match
                             match = '<unset>'
                     line_out = '%2d: %s\n' % (i, match)
-                    #out_file.write(line_out)
                     tester.verify_output(line_out)
-                    #print line_out,
                     if tester.show_rest and i == 0:
                         line_out = '%2d+ %s\n' % (i, data[result.end_offsets[i]:])
-                        #out_file.write(line_out)
                         tester.verify_output(line_out)
-                        #print line_out,
+                if result.mark:
+                    line_out = 'MK: %s\n' % tester.process_output(result.mark)
+                    tester.verify_output(line_out)
             else:
                 line_out = 'No match\n'
-                #out_file.write(line_out)
+                if result.mark:
+                    line_out = 'No match, mark = %s\n' % result.mark
                 tester.verify_output(line_out)
-                #print line_out,
     if tester.failed_tests:
         print '\n%d failed tests' % tester.failed_tests
+    else:
+        print 'all tests passed'
 
 def usage():
     print 'usage: %s testinput testoutput' % sys.argv[0]
