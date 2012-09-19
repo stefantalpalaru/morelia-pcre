@@ -8,17 +8,19 @@ import re
 class Tester:
     options = {
         'i': PCRE_CASELESS,
-        'x': PCRE_EXTENDED,
-        's': PCRE_DOTALL,
-        'm': PCRE_MULTILINE,
         'J': PCRE_DUPNAMES,
-    } # recognized options
+        'm': PCRE_MULTILINE,
+        's': PCRE_DOTALL,
+        'x': PCRE_EXTENDED,
+        'Y': PCRE_NO_START_OPTIMISE,
+    } # simple options
     testinput_line_no = 0
     testoutput_line_no = 0
     failed_tests = 0
     last_regex = ''
     last_opts = ''
     last_data = ''
+    unhandled_opts = set()
 
     def process_data(self, data):
         #print 'data processing:'
@@ -82,6 +84,8 @@ class Tester:
                 self.show_rest = True
             elif opt == 'K':
                 self.do_mark = True
+            else:
+                self.unhandled_opts.add(opt)
         compiled = pcre_compile(regex, self.set_options)
         extra = pcre_study(compiled)
         if self.do_mark:
@@ -144,7 +148,7 @@ def main(*args):
                 tester.verify_output(line)
                 continue
             regex = line[1:regex_end]
-            opts = line[regex_end+1:-1]
+            opts = line[regex_end+1:-1].strip()
             tester.verify_output(line)
             continue
         # it can be only data
@@ -180,6 +184,8 @@ def main(*args):
         print '\n%d failed tests' % tester.failed_tests
     else:
         print 'all tests passed'
+    if tester.unhandled_opts:
+        print 'unhandled options: %s' % ', '.join(tester.unhandled_opts)
 
 def usage():
     print 'usage: %s testinput testoutput' % sys.argv[0]
