@@ -71,6 +71,7 @@ class Tester:
         self.find_all = False
         self.show_rest = False
         self.do_mark = False
+        self.do_study = False
         self.last_regex = regex
         self.last_opts = opts
         self.last_data = data
@@ -84,11 +85,20 @@ class Tester:
                 self.show_rest = True
             elif opt == 'K':
                 self.do_mark = True
+            elif opt == 'S':
+                if self.do_study:
+                    self.do_study = False
+                else:
+                    self.do_study = True
             else:
                 self.unhandled_opts.add(opt)
         compiled = pcre_compile(regex, self.set_options)
-        extra = pcre_study(compiled)
+        extra = None
+        if self.do_study:
+            extra = pcre_study(compiled)
         if self.do_mark:
+            if extra is None:
+                extra = pcre_create_empty_study()
             extra.flags |= PCRE_EXTRA_MARK
         # process the data after compilation and study so exec-only options can be added now
         self.data = self.process_data(data)

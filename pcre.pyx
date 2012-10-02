@@ -1,6 +1,7 @@
 #cython: embedsignature=True
 
 cimport cpcre
+from libc.stdlib cimport malloc
 
 # Options. Some are compile-time only, some are run-time only, and some are
 # both, so we keep them all distinct. However, almost all the bits in the options
@@ -265,6 +266,13 @@ cpdef pcre_study(Pcre re, int options=0):
     if error is not NULL:
         raise Exception(error)
     pcre_extra._c_pcre_extra = sd
+    return pcre_extra
+
+cpdef pcre_create_empty_study():
+    cdef:
+        PcreExtra pcre_extra = PcreExtra.__new__(PcreExtra)
+    pcre_extra._c_pcre_extra = <cpcre.pcre_extra *>malloc(sizeof(cpcre.pcre_extra))
+    pcre_extra._c_pcre_extra.flags = 0
     return pcre_extra
 
 cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offset=0):
