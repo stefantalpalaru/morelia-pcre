@@ -172,13 +172,23 @@ PCRE_EXTRA_MATCH_LIMIT_RECURSION =  0x0010
 PCRE_EXTRA_MARK =                   0x0020
 PCRE_EXTRA_EXECUTABLE_JIT =         0x0040
 
+class PcreException(Exception):
+    pass
+
 cdef extern from "Python.h":
     object PyString_FromStringAndSize(char *, Py_ssize_t)
 
 cdef class Pcre:
     cdef cpcre.pcre *_c_pcre
+    cdef readonly:
+        bint info_available
+        int groups
+        object groupindex
     def __cinit__(self):
         self._c_pcre = NULL
+        self.info_available = 0
+        self.groups = 0
+        self.groupindex = {}
     def __init__(self):
         raise TypeError("This class cannot be instantiated from Python")
     def __dealloc__(self):
@@ -252,7 +262,7 @@ cpdef pcre_compile(char *pattern, int options=0):
 
     re = cpcre.pcre_compile(pattern, options, &error, &erroffset, NULL)
     if re is NULL:
-        raise Exception('PCRE compilation failed at offset %d (%s)' % (erroffset, error))
+        raise PcreException('PCRE compilation failed at offset %d (%s)' % (erroffset, error))
     pcre._c_pcre = re
     return pcre
 
@@ -264,7 +274,7 @@ cpdef pcre_study(Pcre re, int options=0):
 
     sd = cpcre.pcre_study(re._c_pcre, options, &error)
     if error is not NULL:
-        raise Exception(error)
+        raise PcreException(error)
     pcre_extra._c_pcre_extra = sd
     return pcre_extra
 
@@ -275,6 +285,48 @@ cpdef pcre_create_empty_study():
     pcre_extra._c_pcre_extra.flags = 0
     return pcre_extra
 
+cdef pcre_fullinfo_wrapper(cpcre.pcre* code, cpcre.pcre_extra* extra, int what, void* where):
+    res = cpcre.pcre_fullinfo(code, extra, what, where)
+    if res != 0:
+        s = 'pcre_fullinfo() failed: %s'
+        if res == PCRE_ERROR_NULL:
+            raise PcreException(s % 'NULL pointer')
+        elif res == PCRE_ERROR_BADMAGIC:
+            raise PcreException(s % 'magic number not found in pattern')
+        elif res == PCRE_ERROR_BADENDIANNESS:
+            raise PcreException(s % 'the pattern was compiled with different endianness')
+        elif res == PCRE_ERROR_BADOPTION:
+            raise PcreException(s % 'invalid option number')
+        else:
+            raise PcreException(s % 'unknown')
+
+cpdef pcre_info(Pcre re, PcreExtra extra=None):
+    cdef:
+        int capture_count
+        int namecount
+        char *name_table
+        int name_entry_size
+        char *tabptr
+        int i, n
+
+    re.info_available = 1
+
+    # number of captures
+    pcre_fullinfo_wrapper(re._c_pcre, extra._c_pcre_extra, PCRE_INFO_CAPTURECOUNT, &capture_count)
+    re.groups = capture_count
+    
+    # named substrings
+    pcre_fullinfo_wrapper(re._c_pcre, extra._c_pcre_extra, PCRE_INFO_NAMECOUNT, &namecount)
+    if namecount > 0:
+        pcre_fullinfo_wrapper(re._c_pcre, extra._c_pcre_extra, PCRE_INFO_NAMETABLE, &name_table)
+        pcre_fullinfo_wrapper(re._c_pcre, extra._c_pcre_extra, PCRE_INFO_NAMEENTRYSIZE, &name_entry_size)
+        tabptr = name_table
+        for i in range(namecount):
+            n = (tabptr[0] << 8) | tabptr[1]
+            substring_name = PyString_FromStringAndSize(tabptr + 2, name_entry_size - 3)
+            re.groupindex[substring_name] = n
+            tabptr += name_entry_size
+
 cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offset=0):
     subject = process_text(subject)
     cdef:
@@ -284,12 +336,6 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
         int *ovector
         ExecResult exec_result = ExecResult()
         char *match_ptr
-        int res
-        int capture_count
-        int namecount
-        char *name_table
-        int name_entry_size
-        char *tabptr
         int i, n
 
     if extra is None:
@@ -299,10 +345,12 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
     if extra._c_pcre_extra is not NULL and extra._c_pcre_extra.flags & PCRE_EXTRA_MARK:
         extra._c_pcre_extra.mark = &exec_result.markptr
 
+    # get the pcre info if we don't have it already
+    if re.info_available == 0:
+        pcre_info(re, extra)
+    
     # replace the default with (the actual number of capturing subpatterns + 1) * 3
-    res = cpcre.pcre_fullinfo(re._c_pcre, extra._c_pcre_extra, PCRE_INFO_CAPTURECOUNT, &capture_count)
-    if res == 0:
-        oveccount = (capture_count + 1) * 3
+    oveccount = (re.groups + 1) * 3
 
     ovector = <int*>cpcre.pcre_malloc(oveccount * sizeof(int))
     if ovector is NULL:
@@ -319,7 +367,7 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
         for i in range(rc):
             match_len = cpcre.pcre_get_substring(subject, ovector, rc, i, &match_ptr)
             if match_len < 0:
-                raise Exception('error getting the match #%d' % i)
+                raise PcreException('error getting the match #%d' % i)
             exec_result.matches.append(match_ptr[:match_len])
             exec_result.set_matches.append(True if ovector[i * 2] >= 0 else False)
             exec_result.start_offsets.append(ovector[i * 2])
@@ -327,18 +375,10 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
             cpcre.pcre_free_substring(match_ptr)
 
     # named substrings
-    cpcre.pcre_fullinfo(re._c_pcre, extra._c_pcre_extra, PCRE_INFO_NAMECOUNT, &namecount)
-    if namecount > 0:
-        cpcre.pcre_fullinfo(re._c_pcre, extra._c_pcre_extra, PCRE_INFO_NAMETABLE, &name_table)
-        cpcre.pcre_fullinfo(re._c_pcre, extra._c_pcre_extra, PCRE_INFO_NAMEENTRYSIZE, &name_entry_size)
-        tabptr = name_table
-        for i in range(namecount):
-            n = (tabptr[0] << 8) | tabptr[1]
-            substring_name = PyString_FromStringAndSize(tabptr + 2, name_entry_size - 3)
-            #print 'named substring: %d, "%s", "%s"' % (n, substring_name, exec_result.matches[n])
-            if exec_result.num_matches > n:
-                exec_result.named_matches[substring_name] = exec_result.matches[n]
-            tabptr += name_entry_size
+    for substring_name in re.groupindex:
+        n = re.groupindex[substring_name]
+        if exec_result.num_matches > n:
+            exec_result.named_matches[substring_name] = exec_result.matches[n]
 
     return exec_result
 

@@ -21,11 +21,19 @@ for pattern, subject, options in [
     compiled = pcre_compile(pattern, options)
     print 'subject = "%r"' % subject
     extra = pcre_study(compiled)
+    pcre_info(compiled, extra)
+    print 'groups = "%d"' % compiled.groups
+    if compiled.groupindex:
+        print '%d named_groups:' % len(compiled.groupindex)
+        for s in compiled.groupindex:
+            print ' "%s" - %d' % (s, compiled.groupindex[s])
     result = pcre_exec(compiled, subject, extra=extra)
-    print '%d matches:' % result.num_matches
-    for i in xrange(result.num_matches):
-        print ' "%s"' % repr(result.matches[i])
-    pprint(result.named_matches)
+    if result.num_matches:
+        print '%d matches:' % result.num_matches
+        for i in xrange(result.num_matches):
+            print ' "%s"' % repr(result.matches[i])
+    if result.named_matches:
+        pprint(result.named_matches)
     # find all
     results = pcre_find_all(compiled, subject, extra=extra)
     if len(results) > 1:
