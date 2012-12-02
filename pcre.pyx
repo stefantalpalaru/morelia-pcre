@@ -222,7 +222,6 @@ cdef class ExecResult:
         int result
         int num_matches
         bint captured_all
-        object set_matches # list of booleans indicating if the corresponding 'matches' elements are set
         object start_offsets
         object end_offsets
         object matches
@@ -230,7 +229,6 @@ cdef class ExecResult:
     def __cinit__(self):
         self.num_matches = 0
         self.captured_all = 1
-        self.set_matches = []
         self.start_offsets = []
         self.end_offsets = []
         self.matches = []
@@ -338,7 +336,6 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
         ExecResult exec_result = ExecResult()
         char *match_ptr
         int i, n
-        bint got_match
 
     if extra is None:
         extra = PcreExtra.__new__(PcreExtra)
@@ -371,9 +368,7 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
             match_len = cpcre.pcre_get_substring(subject, ovector, rc, i, &match_ptr)
             if match_len < 0:
                 raise PcreException('error getting the match #%d' % i)
-            got_match = True if ovector[i * 2] >= 0 else False
-            exec_result.set_matches.append(got_match)
-            if got_match:
+            if ovector[i * 2] >= 0:
                 exec_result.matches.append(match_ptr[:match_len])
             else:
                 exec_result.matches.append(None)

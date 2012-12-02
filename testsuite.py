@@ -173,7 +173,7 @@ def main(*args):
             if result.num_matches:
                 for i in xrange(result.num_matches):
                     match = tester.process_output(result.matches[i])
-                    if not result.set_matches[i]:
+                    if result.matches[i] is None:
                         # unset match
                         match = '<unset>'
                     line_out = '%2d: %s\n' % (i, match)
