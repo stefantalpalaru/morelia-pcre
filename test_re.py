@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 from test.test_support import verbose, run_unittest, import_module
 from re import Scanner
 import pcre_re as re

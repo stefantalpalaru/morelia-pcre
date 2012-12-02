@@ -103,7 +103,7 @@ This module also defines an exception 'error'.
 
 import sys
 #import sre_compile
-#import sre_parse
+import sre_parse
 from pcre import *
 
 # public symbols
@@ -240,6 +240,8 @@ class SRE_Pattern(object):
         if not already_anchored:
             self.flags &= ~PCRE_ANCHORED
         return res
+    def split(self, string, maxsplit=0):
+        return pcre_split(self.pcre_compiled, string, maxsplit, self.flags, self.pcre_extra)
 
 
 # --------------------------------------------------------------------

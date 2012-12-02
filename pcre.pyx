@@ -2,6 +2,7 @@
 
 cimport cpcre
 from libc.stdlib cimport malloc
+from libc.string cimport const_char
 
 # Options. Some are compile-time only, some are run-time only, and some are
 # both, so we keep them all distinct. However, almost all the bits in the options
@@ -159,7 +160,9 @@ PCRE_CONFIG_JITTARGET =              11
 
 # Request types for pcre_study(). Do not re-arrange, in order to remain compatible.
 
-PCRE_STUDY_JIT_COMPILE =            0x0001
+PCRE_STUDY_JIT_COMPILE =              0x0001
+PCRE_STUDY_JIT_PARTIAL_SOFT_COMPILE = 0x0002
+PCRE_STUDY_JIT_PARTIAL_HARD_COMPILE = 0x0004
 
 # Bit flags for the pcre_extra structure. Do not re-arrange or redefine
 # these bits, just add new ones on the end, in order to remain compatible.
@@ -171,6 +174,55 @@ PCRE_EXTRA_TABLES =                 0x0008
 PCRE_EXTRA_MATCH_LIMIT_RECURSION =  0x0010
 PCRE_EXTRA_MARK =                   0x0020
 PCRE_EXTRA_EXECUTABLE_JIT =         0x0040
+
+# compute some bit masks to avoid errors when supplying wrong options to some functions
+PCRE_COMPILE_OPTIONS_MASK =\
+        PCRE_CASELESS |\
+        PCRE_MULTILINE |\
+        PCRE_DOTALL |\
+        PCRE_EXTENDED |\
+        PCRE_ANCHORED |\
+        PCRE_DOLLAR_ENDONLY |\
+        PCRE_EXTRA |\
+        PCRE_UNGREEDY |\
+        PCRE_UTF8 |\
+        PCRE_NO_AUTO_CAPTURE |\
+        PCRE_NO_UTF8_CHECK |\
+        PCRE_AUTO_CALLOUT |\
+        PCRE_FIRSTLINE |\
+        PCRE_DUPNAMES |\
+        PCRE_NEWLINE_CR |\
+        PCRE_NEWLINE_LF |\
+        PCRE_NEWLINE_CRLF |\
+        PCRE_NEWLINE_ANY |\
+        PCRE_NEWLINE_ANYCRLF |\
+        PCRE_BSR_ANYCRLF |\
+        PCRE_BSR_UNICODE |\
+        PCRE_JAVASCRIPT_COMPAT |\
+        PCRE_NO_START_OPTIMIZE |\
+        PCRE_UCP
+
+PCRE_EXEC_OPTIONS_MASK =\
+        PCRE_ANCHORED |\
+        PCRE_NOTBOL |\
+        PCRE_NOTEOL |\
+        PCRE_NOTEMPTY |\
+        PCRE_PARTIAL_SOFT |\
+        PCRE_NEWLINE_CR |\
+        PCRE_NEWLINE_LF |\
+        PCRE_NEWLINE_CRLF |\
+        PCRE_NEWLINE_ANY |\
+        PCRE_NEWLINE_ANYCRLF |\
+        PCRE_BSR_ANYCRLF |\
+        PCRE_BSR_UNICODE |\
+        PCRE_NO_START_OPTIMIZE |\
+        PCRE_PARTIAL_HARD |\
+        PCRE_NOTEMPTY_ATSTART
+
+PCRE_STUDY_OPTIONS_MASK =\
+        PCRE_STUDY_JIT_COMPILE |\
+        PCRE_STUDY_JIT_PARTIAL_SOFT_COMPILE |\
+        PCRE_STUDY_JIT_PARTIAL_HARD_COMPILE
 
 class PcreException(Exception):
     pass
@@ -254,12 +306,12 @@ cpdef pcre_version():
 
 cpdef pcre_compile(char *pattern, int options=0):
     cdef:
-        char *error
+        const_char *error
         int erroffset
         cpcre.pcre *re
         Pcre pcre = Pcre.__new__(Pcre)
 
-    re = cpcre.pcre_compile(pattern, options, &error, &erroffset, NULL)
+    re = cpcre.pcre_compile(pattern, options & PCRE_COMPILE_OPTIONS_MASK, &error, &erroffset, NULL)
     if re is NULL:
         raise PcreException('PCRE compilation failed at offset %d (%s)' % (erroffset, error))
     pcre._c_pcre = re
@@ -269,9 +321,9 @@ cpdef pcre_study(Pcre re, int options=0):
     cdef:
         cpcre.pcre_extra *sd
         PcreExtra pcre_extra = PcreExtra.__new__(PcreExtra)
-        char *error
+        const_char *error
 
-    sd = cpcre.pcre_study(re._c_pcre, options, &error)
+    sd = cpcre.pcre_study(re._c_pcre, options & PCRE_STUDY_OPTIONS_MASK, &error)
     if error is not NULL:
         raise PcreException(error)
     pcre_extra._c_pcre_extra = sd
@@ -334,7 +386,7 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
         int oveccount = 30
         int *ovector
         ExecResult exec_result = ExecResult()
-        char *match_ptr
+        const_char *match_ptr
         int i, n
 
     if extra is None:
@@ -355,7 +407,7 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
     if ovector is NULL:
         raise MemoryError()
 
-    rc = cpcre.pcre_exec(re._c_pcre, extra._c_pcre_extra, subject, subject_length, offset, options, ovector, oveccount)
+    rc = cpcre.pcre_exec(re._c_pcre, extra._c_pcre_extra, subject, subject_length, offset, options & PCRE_EXEC_OPTIONS_MASK, ovector, oveccount)
     exec_result.result = rc
     exec_result.ovector = ovector
     exec_result.offset = offset
@@ -375,6 +427,12 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
             exec_result.start_offsets.append(ovector[i * 2])
             exec_result.end_offsets.append(ovector[i * 2 + 1])
             cpcre.pcre_free_substring(match_ptr)
+        # if the unmatched groups are at the end, PCRE doesn't bother reporting them
+        # so we have to do it ourselves
+        for i in range(oveccount / 3 - rc):
+            exec_result.matches.append(None)
+            exec_result.start_offsets.append(-1)
+            exec_result.end_offsets.append(-1)
 
     # named substrings
     for substring_name in re.groupindex:
@@ -434,7 +492,7 @@ cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int o
     while True:
         start_offset = end_offset # Start at end of previous match
         # Run the matching operation
-        exec_result = pcre_exec(re, subject, options | not_empty_options, extra, start_offset)
+        exec_result = pcre_exec(re, subject, (options | not_empty_options) & PCRE_EXEC_OPTIONS_MASK, extra, start_offset)
 
         exec_result.offset = start_offset
         end_offset = exec_result.ovector[1]
@@ -485,6 +543,24 @@ cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int o
             if exec_result.ovector[0] == subject_length:
                 break
             not_empty_options = PCRE_NOTEMPTY_ATSTART | PCRE_ANCHORED
-
     return exec_results
+
+cpdef pcre_split(Pcre re, string, int maxsplit=0, int options=0, PcreExtra extra=None):
+    cdef:
+        int last_index = 0
+        int counter = 0
+    
+    string = process_text(string)
+    res = []
+    for result in pcre_find_all(re, string, options | PCRE_NOTEMPTY, extra):
+        if result.num_matches:
+            res.append(string[last_index:result.start_offsets[0]])
+            counter += 1
+            last_index = result.end_offsets[0]
+            if len(result.matches) > 1:
+                res.extend(result.matches[1:])
+            if maxsplit and counter == maxsplit:
+                break
+    res.append(string[last_index:])
+    return res
 
