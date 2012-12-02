@@ -215,7 +215,7 @@ class SRE_Pattern(object):
         self.pattern = pattern
         self.flags = flags
         self.pcre_compiled = pcre_compile(pattern, flags)
-        self.pcre_extra = pcre_study(self.pcre_compiled)
+        self.pcre_extra = pcre_study(self.pcre_compiled, flags)
         pcre_info(self.pcre_compiled, self.pcre_extra)
         self.groups = self.pcre_compiled.groups
         self.groupindex = self.pcre_compiled.groupindex
