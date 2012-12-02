@@ -142,8 +142,35 @@ error = PcreException
 class SRE_Match(object):
     lastindex = None
     lastgroup = None
-    def __init__(self, exec_result):
+    def __init__(self, exec_result, re, string, pos=0, endpos=None):
         self.pcre_exec_result = exec_result
+        self.re = self
+        self.string = string
+        self.pos = pos
+        self.endpos = endpos
+        if re.groups > 0:
+            last_index = 0
+            end_offset = -1
+            length = 0
+            for i in xrange(1, exec_result.num_matches):
+                if exec_result.matches[i] is None:
+                    m_len = 0
+                else:
+                    m_len = len(exec_result.matches[i])
+                if exec_result.end_offsets[i] > end_offset:
+                    end_offset = exec_result.end_offsets[i]
+                    length = m_len
+                    last_index = i
+                elif exec_result.end_offsets[i] == end_offset:
+                    if m_len > length:
+                        length = m_len
+                        last_index = i
+            if last_index:
+                self.lastindex = last_index
+                for name in re.groupindex:
+                    if re.groupindex[name] == last_index:
+                        self.lastgroup = name
+                        break
     def expand(self, template):
         return _expand(self.re, self, template)
     def group(self, *args):
@@ -192,56 +219,79 @@ class SRE_Pattern(object):
         pcre_info(self.pcre_compiled, self.pcre_extra)
         self.groups = self.pcre_compiled.groups
         self.groupindex = self.pcre_compiled.groupindex
-    def search(self, s, pos=0, endpos=None):
-        orig_s = s
+    def search(self, string, pos=0, endpos=None):
+        if not _isstring(string):
+            raise TypeError('expected string or buffer')
+        orig_string = string
         if endpos is not None:
             if endpos < pos:
                 return None
-            s = s[:endpos]
+            string = string[:endpos]
         else:
-            endpos = len(s)
-        exec_result = pcre_exec(self.pcre_compiled, s, self.flags, self.pcre_extra, pos)
+            endpos = len(string)
+        exec_result = pcre_exec(self.pcre_compiled, string, self.flags, self.pcre_extra, pos)
         if exec_result.num_matches == 0:
             return None
-        match_obj = SRE_Match(exec_result)
-        match_obj.string = orig_s
-        match_obj.pos = pos
-        match_obj.endpos = endpos
-        match_obj.re = self
-        if self.groups > 0:
-            last_index = 0
-            end_offset = -1
-            length = 0
-            for i in xrange(1, exec_result.num_matches):
-                if exec_result.matches[i] is None:
-                    m_len = 0
-                else:
-                    m_len = len(exec_result.matches[i])
-                if exec_result.end_offsets[i] > end_offset:
-                    end_offset = exec_result.end_offsets[i]
-                    length = m_len
-                    last_index = i
-                elif exec_result.end_offsets[i] == end_offset:
-                    if m_len > length:
-                        length = m_len
-                        last_index = i
-            if last_index:
-                match_obj.lastindex = last_index
-                for name in self.groupindex:
-                    if self.groupindex[name] == last_index:
-                        match_obj.lastgroup = name
-                        break
+        match_obj = SRE_Match(exec_result, self, orig_string, pos, endpos)
         return match_obj
-    def match(self, s, pos=0, endpos=None):
+    def match(self, string, pos=0, endpos=None):
+        if not _isstring(string):
+            raise TypeError('expected string or buffer')
         already_anchored = self.flags & PCRE_ANCHORED
         if not already_anchored:
             self.flags |= PCRE_ANCHORED
-        res = self.search(s, pos, endpos)
+        res = self.search(string, pos, endpos)
         if not already_anchored:
             self.flags &= ~PCRE_ANCHORED
         return res
     def split(self, string, maxsplit=0):
+        if not _isstring(string):
+            raise TypeError('expected string or buffer')
         return pcre_split(self.pcre_compiled, string, maxsplit, self.flags, self.pcre_extra)
+    def findall(self, string, pos=0, endpos=None):
+        if not _isstring(string):
+            raise TypeError('expected string or buffer')
+        if endpos is not None:
+            if endpos < pos:
+                return None
+            string = string[:endpos]
+        res = []
+        for result in pcre_find_all(self.pcre_compiled, string, self.flags, self.pcre_extra, pos):
+            matches = ['' if match is None else match for match in result.matches]
+            if len(matches) == 1:
+                res.append(matches[0])
+            elif len(matches) == 2:
+                res.append(matches[1])
+            else:
+                res.append(tuple(matches[1:]))
+        return res
+    def finditer(self, string, pos=0, endpos=None):
+        if not _isstring(string):
+            raise TypeError('expected string or buffer')
+        orig_string = string
+        if endpos is not None:
+            if endpos < pos:
+                return None
+            string = string[:endpos]
+        else:
+            endpos = len(string)
+        class Iterator():
+            def __init__(self, string, orig_string, pos, endpos, re):
+                self.orig_string = orig_string
+                self.re = re
+                self.pos = pos
+                self.endpos = endpos
+                self.results = pcre_find_all(re.pcre_compiled, string, re.flags, re.pcre_extra, pos)
+                self.index = -1
+            def __iter__(self):
+                return self
+            def next(self):
+                try:
+                    self.index += 1
+                    return SRE_Match(self.results[self.index], self.re, self.orig_string, self.pos, self.endpos)
+                except IndexError:
+                    raise StopIteration
+        return Iterator(string, orig_string, pos, endpos, self)
 
 
 # --------------------------------------------------------------------
