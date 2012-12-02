@@ -4,9 +4,8 @@
 *.swo
 *.*~
 *.bak
-*.c
-*.h
-*.so
+pcre.c
+pcre.so
 build
 vim.session
 tmp*
