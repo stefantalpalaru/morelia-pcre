@@ -16,13 +16,19 @@ for pattern, subject, options in [
     ['a.b', 'xaabcaxbaybzzzaaaBbbx', PCRE_CASELESS],
     ['\\b', 'abc', 0],
     ['', 'abc', 0],
+    ['(a)b', 'ab', 0],
+    ['((a)(b))', 'ab', 0],
+    ['((ab))', 'ab', 0],
+    ['bc', 'abcd', PCRE_ANCHORED],
 ]:
+    print
     print 'pattern = "%r"' % pattern
     compiled = pcre_compile(pattern, options)
     print 'subject = "%r"' % subject
     extra = pcre_study(compiled)
     pcre_info(compiled, extra)
-    print 'groups = "%d"' % compiled.groups
+    if compiled.groups:
+        print 'groups = %d' % compiled.groups
     if compiled.groupindex:
         print '%d named_groups:' % len(compiled.groupindex)
         for s in compiled.groupindex:
@@ -31,7 +37,7 @@ for pattern, subject, options in [
     if result.num_matches:
         print '%d matches:' % result.num_matches
         for i in xrange(result.num_matches):
-            print ' "%s"' % repr(result.matches[i])
+            print ' "%s" (%d:%d)' % (repr(result.matches[i]), result.start_offsets[i], result.end_offsets[i])
     if result.named_matches:
         pprint(result.named_matches)
     # find all

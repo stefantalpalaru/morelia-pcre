@@ -176,7 +176,7 @@ class PcreException(Exception):
     pass
 
 cdef extern from "Python.h":
-    object PyString_FromStringAndSize(char *, Py_ssize_t)
+    object PyString_FromString(char *)
 
 cdef class Pcre:
     cdef cpcre.pcre *_c_pcre
@@ -218,6 +218,7 @@ cdef class ExecResult:
         int *ovector
         public unsigned char *markptr
     cdef readonly:
+        int offset
         int result
         int num_matches
         bint captured_all
@@ -323,7 +324,7 @@ cpdef pcre_info(Pcre re, PcreExtra extra=None):
         tabptr = name_table
         for i in range(namecount):
             n = (tabptr[0] << 8) | tabptr[1]
-            substring_name = PyString_FromStringAndSize(tabptr + 2, name_entry_size - 3)
+            substring_name = PyString_FromString(tabptr + 2)
             re.groupindex[substring_name] = n
             tabptr += name_entry_size
 
@@ -337,6 +338,7 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
         ExecResult exec_result = ExecResult()
         char *match_ptr
         int i, n
+        bint got_match
 
     if extra is None:
         extra = PcreExtra.__new__(PcreExtra)
@@ -359,6 +361,7 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
     rc = cpcre.pcre_exec(re._c_pcre, extra._c_pcre_extra, subject, subject_length, offset, options, ovector, oveccount)
     exec_result.result = rc
     exec_result.ovector = ovector
+    exec_result.offset = offset
     if rc == 0:
         rc = oveccount / 3
         exec_result.captured_all = 0
@@ -368,8 +371,12 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
             match_len = cpcre.pcre_get_substring(subject, ovector, rc, i, &match_ptr)
             if match_len < 0:
                 raise PcreException('error getting the match #%d' % i)
-            exec_result.matches.append(match_ptr[:match_len])
-            exec_result.set_matches.append(True if ovector[i * 2] >= 0 else False)
+            got_match = True if ovector[i * 2] >= 0 else False
+            exec_result.set_matches.append(got_match)
+            if got_match:
+                exec_result.matches.append(match_ptr[:match_len])
+            else:
+                exec_result.matches.append(None)
             exec_result.start_offsets.append(ovector[i * 2])
             exec_result.end_offsets.append(ovector[i * 2 + 1])
             cpcre.pcre_free_substring(match_ptr)
@@ -383,6 +390,9 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
     return exec_result
 
 cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int offset=0):
+    """
+    translated and adapted from pcredemo.c
+    """
     subject = process_text(subject)
     exec_results = []
     cdef:
@@ -399,7 +409,7 @@ cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int o
     # sequence. First, find the options with which the regex was compiled; extract
     # the UTF-8 state, and mask off all but the newline options.
 
-    cpcre.pcre_fullinfo(re._c_pcre, NULL, PCRE_INFO_OPTIONS, &option_bits);
+    pcre_fullinfo_wrapper(re._c_pcre, NULL, PCRE_INFO_OPTIONS, &option_bits);
     utf8 = option_bits & PCRE_UTF8
     option_bits &= PCRE_NEWLINE_CR|PCRE_NEWLINE_LF | PCRE_NEWLINE_CRLF | PCRE_NEWLINE_ANY | PCRE_NEWLINE_ANYCRLF
 
@@ -431,6 +441,7 @@ cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int o
         # Run the matching operation
         exec_result = pcre_exec(re, subject, options | not_empty_options, extra, start_offset)
 
+        exec_result.offset = start_offset
         end_offset = exec_result.ovector[1]
 
         # This time, a result of NOMATCH isn't an error. If the value in "not_empty_options"

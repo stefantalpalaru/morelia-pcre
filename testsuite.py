@@ -173,10 +173,9 @@ def main(*args):
             if result.num_matches:
                 for i in xrange(result.num_matches):
                     match = tester.process_output(result.matches[i])
-                    if len(match) == 0:
-                        if not result.set_matches[i]:
-                            # unset match
-                            match = '<unset>'
+                    if not result.set_matches[i]:
+                        # unset match
+                        match = '<unset>'
                     line_out = '%2d: %s\n' % (i, match)
                     tester.verify_output(line_out)
                     if tester.show_rest and i == 0:
