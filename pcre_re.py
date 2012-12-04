@@ -217,7 +217,9 @@ class SRE_Pattern(object):
     def __init__(self, pattern, flags):
         self.pattern = pattern
         self.flags = flags
-        self.pcre_compiled = pcre_compile(pattern, flags)
+        # handle internal options with a different syntax from PCRE
+        pat = pcre_sub(pcre_compile(r'(\(\?[imsx]*)u([imsx]*\))'), r'(*UTF)(*UCP)\1\2', pattern)
+        self.pcre_compiled = pcre_compile(pat, flags)
         self.pcre_extra = pcre_study(self.pcre_compiled, flags)
         pcre_info(self.pcre_compiled, self.pcre_extra)
         self.groups = self.pcre_compiled.groups
@@ -297,11 +299,15 @@ class SRE_Pattern(object):
         return Iterator(string, orig_string, pos, endpos, self)
     def subn(self, repl, string, count=0):
         last_index = 0
+        last_match = ''
         counter = 0
         pieces = []
         if not hasattr(repl, '__call__'):
             repl = lambda match, template=repl: match.expand(template)
         for match in self.finditer(string):
+            if last_match != '' and match.group() == '' and last_index == match.pcre_exec_result.start_offsets[0]:
+                continue
+            last_match = match.group()
             counter += 1
             pieces.append(string[last_index:match.pcre_exec_result.start_offsets[0]])
             last_index = match.pcre_exec_result.end_offsets[0]

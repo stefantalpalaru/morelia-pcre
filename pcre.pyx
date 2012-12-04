@@ -341,15 +341,15 @@ cpdef pcre_version():
     return cpcre.pcre_version()
 
 cpdef pcre_compile(pattern, int options=0):
-    if isinstance(pattern, unicode):
-        options |= PCRE_UTF8
-    pattern = process_text(pattern)
     cdef:
         const_char *error
         int erroffset
         cpcre.pcre *re
         Pcre pcre = Pcre.__new__(Pcre)
 
+    if isinstance(pattern, unicode):
+        options |= PCRE_UTF8 | PCRE_UCP
+    pattern = process_text(pattern)
     re = cpcre.pcre_compile(pattern, options & PCRE_COMPILE_OPTIONS_MASK, &error, &erroffset, NULL)
     if re is NULL:
         raise PcreException('PCRE compilation failed at offset %d (%s)' % (erroffset, error))
@@ -623,18 +623,27 @@ cpdef pcre_split(Pcre re, string, int maxsplit=0, int options=0, PcreExtra extra
     res.append(string[last_index:])
     return res
 
-# TODO: add back-references and test this function
+def replace_backrefs_gen(result):
+    def replace_backrefs(match):
+        try:
+            return result.matches[int(match.matches[1])]
+        except:
+            raise PcreException('no such group')
+    return replace_backrefs
+
+# TODO: add named back-references and test this function
 cpdef pcre_subn(Pcre re, repl, string, int count=0, int options=0, PcreExtra extra=None):
     cdef:
         int last_index = 0
         int counter = 0
         bint is_callable = 0
-
+    
+    orig_string = string
     string = process_text(string)
     pieces = []
     if hasattr(repl, '__call__'):
         is_callable = 1
-    for result in pcre_find_all(re, string, options | PCRE_NOTEMPTY, extra):
+    for result in pcre_find_all(re, string, options, extra):
         counter += 1
         pieces.append(string[last_index:result.start_offsets[0]])
         last_index = result.end_offsets[0]
@@ -642,9 +651,14 @@ cpdef pcre_subn(Pcre re, repl, string, int count=0, int options=0, PcreExtra ext
             replacement = repl(result)
         else:
             replacement = process_text(repl)
+            backref_pat = pcre_compile(r'\\([1-9])')
+            replacement = pcre_subn(backref_pat, replace_backrefs_gen(result), replacement)[0]
         pieces.append(replacement)
         if count and count == counter:
             break
-    pieces.append(string[last_index:])
-    return string[:0].join(pieces), counter
+    pieces.append(orig_string[last_index:])
+    return orig_string[:0].join(pieces), counter
+
+cpdef pcre_sub(Pcre re, repl, string, int count=0, int options=0, PcreExtra extra=None):
+    return pcre_subn(re, repl, string, count, options, extra)[0]
 
