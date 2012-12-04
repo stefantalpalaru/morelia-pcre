@@ -229,6 +229,7 @@ class PcreException(Exception):
 
 cdef extern from "Python.h":
     object PyString_FromString(char *)
+    object PyString_FromStringAndSize(char *s, Py_ssize_t len)
 
 cdef class Pcre:
     cdef cpcre.pcre *_c_pcre
@@ -301,10 +302,19 @@ cdef process_text(text):
         text = text.encode('UTF-8')
     return text
 
+cdef unicode tounicode(char* s):
+    return s.decode('UTF-8', 'strict')
+
+cdef unicode tounicode_with_length(char* s, size_t length):
+    return s[:length].decode('UTF-8', 'strict')
+
 cpdef pcre_version():
     return cpcre.pcre_version()
 
-cpdef pcre_compile(char *pattern, int options=0):
+cpdef pcre_compile(pattern, int options=0):
+    if isinstance(pattern, unicode):
+        options |= PCRE_UTF8
+    pattern = process_text(pattern)
     cdef:
         const_char *error
         int erroffset
@@ -379,16 +389,19 @@ cpdef pcre_info(Pcre re, PcreExtra extra=None):
             tabptr += name_entry_size
 
 cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offset=0):
-    subject = process_text(subject)
     cdef:
         int rc
-        int subject_length = len(subject)
+        int subject_length
         int oveccount = 30
         int *ovector
         ExecResult exec_result = ExecResult()
         const_char *match_ptr
         int i, n
+        int start, end
+        bint subject_is_unicode = isinstance(subject, unicode)
 
+    subject = process_text(subject)
+    subject_length = len(subject)
     if extra is None:
         extra = PcreExtra.__new__(PcreExtra)
 
@@ -421,11 +434,26 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
             if match_len < 0:
                 raise PcreException('error getting the match #%d' % i)
             if ovector[i * 2] >= 0:
-                exec_result.matches.append(match_ptr[:match_len])
+                match = match_ptr[:match_len]
+                if subject_is_unicode:
+                    try:
+                        match = tounicode_with_length(<char*>match_ptr, match_len)
+                    except:
+                        pass
+                exec_result.matches.append(match)
             else:
                 exec_result.matches.append(None)
-            exec_result.start_offsets.append(ovector[i * 2])
-            exec_result.end_offsets.append(ovector[i * 2 + 1])
+            start = ovector[i * 2]
+            end = ovector[i * 2 + 1]
+            if subject_is_unicode and start >= 0:
+                try:
+                    str_before = tounicode_with_length(<char*>subject, ovector[i * 2])
+                    start = len(str_before)
+                    end = start + len(match)
+                except:
+                    pass
+            exec_result.start_offsets.append(start)
+            exec_result.end_offsets.append(end)
             cpcre.pcre_free_substring(match_ptr)
         # if the unmatched groups are at the end, PCRE doesn't bother reporting them
         # so we have to do it ourselves
@@ -446,6 +474,7 @@ cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int o
     """
     translated and adapted from pcredemo.c
     """
+    orig_subject = subject
     subject = process_text(subject)
     exec_results = []
     cdef:
@@ -492,7 +521,7 @@ cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int o
     while True:
         start_offset = end_offset # Start at end of previous match
         # Run the matching operation
-        exec_result = pcre_exec(re, subject, (options | not_empty_options) & PCRE_EXEC_OPTIONS_MASK, extra, start_offset)
+        exec_result = pcre_exec(re, orig_subject, (options | not_empty_options) & PCRE_EXEC_OPTIONS_MASK, extra, start_offset)
 
         exec_result.offset = start_offset
         end_offset = exec_result.ovector[1]
@@ -553,14 +582,38 @@ cpdef pcre_split(Pcre re, string, int maxsplit=0, int options=0, PcreExtra extra
     string = process_text(string)
     res = []
     for result in pcre_find_all(re, string, options | PCRE_NOTEMPTY, extra):
-        if result.num_matches:
-            res.append(string[last_index:result.start_offsets[0]])
-            counter += 1
-            last_index = result.end_offsets[0]
-            if len(result.matches) > 1:
-                res.extend(result.matches[1:])
-            if maxsplit and counter == maxsplit:
-                break
+        counter += 1
+        res.append(string[last_index:result.start_offsets[0]])
+        last_index = result.end_offsets[0]
+        if len(result.matches) > 1:
+            res.extend(result.matches[1:])
+        if maxsplit and counter == maxsplit:
+            break
     res.append(string[last_index:])
     return res
+
+# TODO: add back-references and test this function
+cpdef pcre_subn(Pcre re, repl, string, int count=0, int options=0, PcreExtra extra=None):
+    cdef:
+        int last_index = 0
+        int counter = 0
+        bint is_callable = 0
+
+    string = process_text(string)
+    pieces = []
+    if hasattr(repl, '__call__'):
+        is_callable = 1
+    for result in pcre_find_all(re, string, options | PCRE_NOTEMPTY, extra):
+        counter += 1
+        pieces.append(string[last_index:result.start_offsets[0]])
+        last_index = result.end_offsets[0]
+        if is_callable:
+            replacement = repl(result)
+        else:
+            replacement = process_text(repl)
+        pieces.append(replacement)
+        if count and count == counter:
+            break
+    pieces.append(string[last_index:])
+    return string[:0].join(pieces), counter
 

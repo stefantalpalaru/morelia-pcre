@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 from pcre import *
 from pprint import pprint
@@ -20,6 +21,8 @@ for pattern, subject, options in [
     ['((a)(b))', 'ab', 0],
     ['((ab))', 'ab', 0],
     ['bc', 'abcd', PCRE_ANCHORED],
+    [u'è', u'âăşèţî', 0],
+    [u'\u2222', u'\u2222', 0],
 ]:
     print
     print 'pattern = "%r"' % pattern
@@ -37,6 +40,8 @@ for pattern, subject, options in [
     if result.num_matches:
         print '%d matches:' % result.num_matches
         for i in xrange(result.num_matches):
+            if i:
+                print ' ',
             print ' "%s" (%d:%d)' % (repr(result.matches[i]), result.start_offsets[i], result.end_offsets[i])
     if result.named_matches:
         pprint(result.named_matches)
@@ -46,5 +51,7 @@ for pattern, subject, options in [
         print '*** find all ***'
         for result in results:
             for i in xrange(result.num_matches):
-                print ' "%s"' % repr(result.matches[i])
+                if i:
+                    print ' ',
+                print '  "%s"' % repr(result.matches[i])
 

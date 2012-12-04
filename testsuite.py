@@ -59,7 +59,10 @@ class Tester:
         return data
 
     def process_output(self, output):
-        output = repr(output)[1:-1]
+        skip = 1
+        if isinstance(output, unicode):
+            skip = 2
+        output = repr(output)[skip:-1]
         output = re.sub(r'\\t', '\\x09', output)
         output = re.sub(r'\\n', '\\x0a', output)
         output = re.sub(r'\\r', '\\x0d', output)

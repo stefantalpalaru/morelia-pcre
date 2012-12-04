@@ -144,10 +144,12 @@ class SRE_Match(object):
     lastgroup = None
     def __init__(self, exec_result, re, string, pos=0, endpos=None):
         self.pcre_exec_result = exec_result
-        self.re = self
+        self.re = re
         self.string = string
         self.pos = pos
         self.endpos = endpos
+        self.regs = tuple(zip(exec_result.start_offsets, exec_result.end_offsets))
+        # lastindex and lastgroup
         if re.groups > 0:
             last_index = 0
             end_offset = -1
@@ -221,7 +223,7 @@ class SRE_Pattern(object):
         self.groupindex = self.pcre_compiled.groupindex
     def search(self, string, pos=0, endpos=None):
         if not _isstring(string):
-            raise TypeError('expected string or buffer')
+            string = unicode(string)
         orig_string = string
         if endpos is not None:
             if endpos < pos:
@@ -232,11 +234,11 @@ class SRE_Pattern(object):
         exec_result = pcre_exec(self.pcre_compiled, string, self.flags, self.pcre_extra, pos)
         if exec_result.num_matches == 0:
             return None
-        match_obj = SRE_Match(exec_result, self, orig_string, pos, endpos)
-        return match_obj
+        match = SRE_Match(exec_result, self, orig_string, pos, endpos)
+        return match
     def match(self, string, pos=0, endpos=None):
         if not _isstring(string):
-            raise TypeError('expected string or buffer')
+            string = unicode(string)
         already_anchored = self.flags & PCRE_ANCHORED
         if not already_anchored:
             self.flags |= PCRE_ANCHORED
@@ -292,6 +294,29 @@ class SRE_Pattern(object):
                 except IndexError:
                     raise StopIteration
         return Iterator(string, orig_string, pos, endpos, self)
+    def subn(self, repl, string, count=0):
+        last_index = 0
+        counter = 0
+        pieces = []
+        if not hasattr(repl, '__call__'):
+            repl = lambda match, template=repl: match.expand(template)
+        for match in self.finditer(string):
+            counter += 1
+            pieces.append(string[last_index:match.pcre_exec_result.start_offsets[0]])
+            last_index = match.pcre_exec_result.end_offsets[0]
+            try:
+                pieces.append(repl(match))
+            except IndexError:
+                raise
+            except Exception, e:
+                raise error(e)
+            if count and count == counter:
+                break
+        pieces.append(string[last_index:])
+        return string[:0].join(pieces), counter
+    def sub(self, repl, string, count=0):
+        return self.subn(repl, string, count)[0]
+
 
 
 # --------------------------------------------------------------------
