@@ -86,6 +86,9 @@ PCRE_ERROR_RECURSELOOP =    (-26)
 PCRE_ERROR_JIT_STACKLIMIT = (-27)
 PCRE_ERROR_BADMODE =        (-28)
 PCRE_ERROR_BADENDIANNESS =  (-29)
+PCRE_ERROR_DFA_BADRESTART = (-30)
+PCRE_ERROR_JIT_BADOPTION =  (-31)
+PCRE_ERROR_BADLENGTH =      (-32)
 
 
 # Specific error codes for UTF-8 validity checks 
@@ -308,6 +311,32 @@ cdef unicode tounicode(char* s):
 cdef unicode tounicode_with_length(char* s, size_t length):
     return s[:length].decode('UTF-8', 'strict')
 
+cdef process_exec_error(int rc):
+    error_codes = {
+        PCRE_ERROR_MATCHLIMIT: 'maximum match limit exceeded',
+        PCRE_ERROR_RECURSIONLIMIT: 'maximum recursion limit exceeded',
+        PCRE_ERROR_NULL: 'NULL parameter',
+        PCRE_ERROR_BADOPTION: 'unrecognized option (flag)',
+        PCRE_ERROR_BADMAGIC: 'magic number not present',
+        PCRE_ERROR_UNKNOWN_OPCODE: 'unknown opcode',
+        PCRE_ERROR_NOMEMORY: 'out of memory',
+        PCRE_ERROR_BADUTF8: 'invalid UTF-8 byte sequence',
+        PCRE_ERROR_BADUTF8_OFFSET: 'invalid UTF-8 offset',
+        PCRE_ERROR_INTERNAL: 'unexpected internal error',
+        PCRE_ERROR_BADCOUNT: 'invalid value for ovecsize',
+        PCRE_ERROR_BADNEWLINE: 'invalid combination of PCRE_NEWLINE_xxx options',
+        PCRE_ERROR_BADOFFSET: 'invalid offset',
+        PCRE_ERROR_SHORTUTF8: 'short UTF-8 byte sequence',
+        PCRE_ERROR_RECURSELOOP: 'recursion loop within the pattern',
+        PCRE_ERROR_JIT_STACKLIMIT: 'out of JIT memory',
+        PCRE_ERROR_BADMODE: 'a pattern that was compiled by the 8-bit library is passed to a 16-bit or 32-bit library function, or vice versa',
+        PCRE_ERROR_BADENDIANNESS: 'a pattern that was compiled and saved is reloaded on a host with different endianness',
+        PCRE_ERROR_JIT_BADOPTION: 'invalid option in JIT mode',
+        PCRE_ERROR_BADLENGTH: 'pcre_exec() was called with a negative value for the length argument',
+    }
+    if rc in error_codes:
+        raise PcreException(error_codes[rc])
+
 cpdef pcre_version():
     return cpcre.pcre_version()
 
@@ -462,11 +491,13 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
             exec_result.start_offsets.append(-1)
             exec_result.end_offsets.append(-1)
 
-    # named substrings
-    for substring_name in re.groupindex:
-        n = re.groupindex[substring_name]
-        if exec_result.num_matches > n:
-            exec_result.named_matches[substring_name] = exec_result.matches[n]
+        # named substrings
+        for substring_name in re.groupindex:
+            n = re.groupindex[substring_name]
+            if exec_result.num_matches > n:
+                exec_result.named_matches[substring_name] = exec_result.matches[n]
+    elif rc < 0:
+        process_exec_error(rc)
 
     return exec_result
 

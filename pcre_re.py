@@ -104,6 +104,7 @@ This module also defines an exception 'error'.
 import sys
 #import sre_compile
 import sre_parse
+import re
 from pcre import *
 
 # public symbols
@@ -120,7 +121,7 @@ I = IGNORECASE = PCRE_CASELESS # ignore case
 #L = LOCALE = sre_compile.SRE_FLAG_LOCALE # assume current 8-bit locale
 L = LOCALE = 0 # assume current 8-bit locale
 #U = UNICODE = sre_compile.SRE_FLAG_UNICODE # assume unicode locale
-U = UNICODE = 0 # assume unicode locale
+U = UNICODE = PCRE_UCP|PCRE_UTF8 # assume unicode locale
 #M = MULTILINE = sre_compile.SRE_FLAG_MULTILINE # make anchors look for newline
 M = MULTILINE = PCRE_MULTILINE # make anchors look for newline
 #S = DOTALL = sre_compile.SRE_FLAG_DOTALL # make dot match newline
@@ -316,6 +317,12 @@ class SRE_Pattern(object):
         return string[:0].join(pieces), counter
     def sub(self, repl, string, count=0):
         return self.subn(repl, string, count)[0]
+    def scanner(self, *args):
+        """
+        undocumented but appears in tests and might be used in the wild
+        so let's have it but don't bother converting it to PCRE
+        """
+        return re.compile(self.pattern, self.flags).scanner(*args)
 
 
 

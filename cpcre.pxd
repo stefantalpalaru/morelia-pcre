@@ -4,8 +4,10 @@ cdef extern from "pcre.h":
     ctypedef struct pcre_jit_stack:
         pass
     ctypedef struct pcre_extra:
-        unsigned long int flags        # Bits for which fields are set
-        unsigned char **mark           # For passing back a mark pointer
+        unsigned long int flags                 # Bits for which fields are set
+        unsigned long int match_limit           # Maximum number of calls to match()
+        unsigned long int match_limit_recursion # Max recursive calls to match()
+        unsigned char **mark                    # For passing back a mark pointer
     ctypedef struct pcre_callout_block:
         pass
     ctypedef pcre_jit_stack* (*pcre_jit_callback)(void*)
