@@ -623,15 +623,7 @@ cpdef pcre_split(Pcre re, string, int maxsplit=0, int options=0, PcreExtra extra
     res.append(string[last_index:])
     return res
 
-def replace_backrefs_gen(result):
-    def replace_backrefs(match):
-        try:
-            return result.matches[int(match.matches[1])]
-        except:
-            raise PcreException('no such group')
-    return replace_backrefs
-
-# TODO: add named back-references and test this function
+# TODO: test this function
 cpdef pcre_subn(Pcre re, repl, string, int count=0, int options=0, PcreExtra extra=None):
     cdef:
         int last_index = 0
@@ -650,9 +642,7 @@ cpdef pcre_subn(Pcre re, repl, string, int count=0, int options=0, PcreExtra ext
         if is_callable:
             replacement = repl(result)
         else:
-            replacement = process_text(repl)
-            backref_pat = pcre_compile(r'\\([1-9])')
-            replacement = pcre_subn(backref_pat, replace_backrefs_gen(result), replacement)[0]
+            replacement = repl.format(*result.matches[1:], **result.named_matches)
         pieces.append(replacement)
         if count and count == counter:
             break

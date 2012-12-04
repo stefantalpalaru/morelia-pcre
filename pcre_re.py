@@ -218,7 +218,8 @@ class SRE_Pattern(object):
         self.pattern = pattern
         self.flags = flags
         # handle internal options with a different syntax from PCRE
-        pat = pcre_sub(pcre_compile(r'(\(\?[imsx]*)u([imsx]*\))'), r'(*UTF)(*UCP)\1\2', pattern)
+        pat = pcre_sub(pcre_compile(r'(\(\?[imsux]*)L([imsux]*\))'), r'{0}{1}', pattern)
+        pat = pcre_sub(pcre_compile(r'(\(\?[imsx]*)u([imsx]*\))'), r'(*UTF)(*UCP){0}{1}', pat)
         self.pcre_compiled = pcre_compile(pat, flags)
         self.pcre_extra = pcre_study(self.pcre_compiled, flags)
         pcre_info(self.pcre_compiled, self.pcre_extra)
