@@ -103,7 +103,7 @@ This module also defines an exception 'error'.
 """
 
 import sys
-#import sre_compile
+import sre_compile
 import sre_parse
 import re
 from pcre import *
@@ -132,7 +132,9 @@ X = VERBOSE = PCRE_EXTENDED # ignore whitespace and comments
 
 # sre extensions (experimental, don't rely on these)
 #T = TEMPLATE = sre_compile.SRE_FLAG_TEMPLATE # disable backtracking
+T = TEMPLATE = 0 # disable backtracking
 #DEBUG = sre_compile.SRE_FLAG_DEBUG # dump pattern after compilation
+DEBUG = 0 # dump pattern after compilation
 
 # sre exception
 #error = sre_compile.error
@@ -218,9 +220,14 @@ class SRE_Pattern(object):
     def __init__(self, pattern, flags):
         self.pattern = pattern
         self.flags = flags
+        # don't support some escapes that are invalid in 're' (just \ddd so we don't mess with the back references)
+        res = pcre_exec(pcre_compile(r'(?:^|[^\\])(\\[89]\d\d)'), pattern)
+        if res.num_matches:
+            raise error('bogus escape: %r' % res.matches[1])
         # handle internal options with a different syntax from PCRE
         pat = pcre_sub(pcre_compile(r'(\(\?[imsux]*)L([imsux]*\))'), r'{0}{1}', pattern)
         pat = pcre_sub(pcre_compile(r'(\(\?[imsx]*)u([imsx]*\))'), r'(*UTF)(*UCP){0}{1}', pat)
+        # process the pattern
         self.pcre_compiled = pcre_compile(pat, flags)
         self.pcre_extra = pcre_study(self.pcre_compiled, flags)
         pcre_info(self.pcre_compiled, self.pcre_extra)
