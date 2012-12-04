@@ -13,6 +13,7 @@
 # CNRI.  Hewlett-Packard provided funding for 1.6 integration and
 # other compatibility work.
 #
+# 2012: ported to morelia-pcre by Stefan Talpalaru <stefan.talpalaru@od-eon.com>
 
 r"""Support for regular expressions (RE).
 
