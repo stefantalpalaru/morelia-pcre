@@ -515,7 +515,8 @@ cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int o
         int utf8
         int d
         int crlf_is_newline
-        int subject_length = len(subject)
+        char* c_subject = subject
+        int subject_length = len(c_subject)
         int start_offset
         int end_offset
 
@@ -579,12 +580,12 @@ cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int o
                                                         # If CRLF is newline & we are at CRLF,
             if crlf_is_newline and \
                start_offset < subject_length - 1 and \
-               subject[start_offset] == '\r' and \
-               subject[start_offset + 1] == '\n':
+               c_subject[start_offset] == '\r' and \
+               c_subject[start_offset + 1] == '\n':
                 end_offset += 1                         # Advance by one more.
             elif utf8:                                  # Otherwise, ensure we advance a whole UTF-8
                 while end_offset < subject_length:      # character.
-                    if (ord(subject[end_offset]) & 0xc0) != 0x80:
+                    if (c_subject[end_offset] & 0xc0) != 0x80:
                         break
                     end_offset += 1
             continue # Go round the loop again
@@ -619,7 +620,7 @@ cpdef pcre_split(Pcre re, string, int maxsplit=0, int options=0, PcreExtra extra
         last_index = result.end_offsets[0]
         if len(result.matches) > 1:
             res.extend(result.matches[1:])
-        if maxsplit and counter == maxsplit:
+        if counter == maxsplit:
             break
     res.append(string[last_index:])
     return res
@@ -643,9 +644,9 @@ cpdef pcre_subn(Pcre re, repl, string, int count=0, int options=0, PcreExtra ext
         if is_callable:
             replacement = repl(result)
         else:
-            replacement = repl.format(*result.matches[1:], **result.named_matches)
+            replacement = repl.format(*result.matches, **result.named_matches)
         pieces.append(replacement)
-        if count and count == counter:
+        if count == counter:
             break
     pieces.append(orig_string[last_index:])
     return orig_string[:0].join(pieces), counter

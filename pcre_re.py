@@ -226,8 +226,8 @@ class SRE_Pattern(object):
         if res.num_matches:
             raise error('bogus escape: %r' % res.matches[1])
         # handle internal options with a different syntax from PCRE
-        pat = pcre_sub(pcre_compile(r'(\(\?[imsux]*)L([imsux]*\))'), r'{0}{1}', pattern)
-        pat = pcre_sub(pcre_compile(r'(\(\?[imsx]*)u([imsx]*\))'), r'(*UTF)(*UCP){0}{1}', pat)
+        pat = pcre_sub(pcre_compile(r'(\(\?[imsux]*)L([imsux]*\))'), r'{1}{2}', pattern)
+        pat = pcre_sub(pcre_compile(r'(\(\?[imsx]*)u([imsx]*\))'), r'(*UTF)(*UCP){1}{2}', pat)
         # process the pattern
         self.pcre_compiled = pcre_compile(pat, self.used_flags)
         self.pcre_extra = pcre_study(self.pcre_compiled, self.used_flags)
@@ -315,19 +315,20 @@ class SRE_Pattern(object):
         if not hasattr(repl, '__call__'):
             repl = lambda match, template=repl: match.expand(template)
         for match in self.finditer(string):
-            if last_match != '' and match.group() == '' and last_index == match.pcre_exec_result.start_offsets[0]:
+            result = match.pcre_exec_result
+            if last_match != '' and result.matches[0] == '' and last_index == result.start_offsets[0]:
                 continue
-            last_match = match.group()
+            last_match = result.matches[0]
             counter += 1
-            pieces.append(string[last_index:match.pcre_exec_result.start_offsets[0]])
-            last_index = match.pcre_exec_result.end_offsets[0]
+            pieces.append(string[last_index:result.start_offsets[0]])
+            last_index = result.end_offsets[0]
             try:
                 pieces.append(repl(match))
             except IndexError:
                 raise
             except Exception, e:
                 raise error(e)
-            if count and count == counter:
+            if count == counter:
                 break
         pieces.append(string[last_index:])
         return string[:0].join(pieces), counter
