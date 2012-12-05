@@ -210,6 +210,7 @@ PCRE_EXEC_OPTIONS_MASK =\
         PCRE_NOTBOL |\
         PCRE_NOTEOL |\
         PCRE_NOTEMPTY |\
+        PCRE_NO_UTF8_CHECK |\
         PCRE_PARTIAL_SOFT |\
         PCRE_NEWLINE_CR |\
         PCRE_NEWLINE_LF |\
@@ -583,7 +584,7 @@ cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int o
                 end_offset += 1                         # Advance by one more.
             elif utf8:                                  # Otherwise, ensure we advance a whole UTF-8
                 while end_offset < subject_length:      # character.
-                    if (subject[end_offset] & 0xc0) != 0x80:
+                    if (ord(subject[end_offset]) & 0xc0) != 0x80:
                         break
                     end_offset += 1
             continue # Go round the loop again

@@ -220,6 +220,7 @@ class SRE_Pattern(object):
     def __init__(self, pattern, flags):
         self.pattern = pattern
         self.flags = flags
+        self.used_flags = flags | PCRE_NO_UTF8_CHECK
         # don't support some escapes that are invalid in 're' (just \ddd so we don't mess with the back references)
         res = pcre_exec(pcre_compile(r'(?:^|[^\\])(\\[89]\d\d)'), pattern)
         if res.num_matches:
@@ -228,8 +229,8 @@ class SRE_Pattern(object):
         pat = pcre_sub(pcre_compile(r'(\(\?[imsux]*)L([imsux]*\))'), r'{0}{1}', pattern)
         pat = pcre_sub(pcre_compile(r'(\(\?[imsx]*)u([imsx]*\))'), r'(*UTF)(*UCP){0}{1}', pat)
         # process the pattern
-        self.pcre_compiled = pcre_compile(pat, flags)
-        self.pcre_extra = pcre_study(self.pcre_compiled, flags)
+        self.pcre_compiled = pcre_compile(pat, self.used_flags)
+        self.pcre_extra = pcre_study(self.pcre_compiled, self.used_flags)
         pcre_info(self.pcre_compiled, self.pcre_extra)
         self.groups = self.pcre_compiled.groups
         self.groupindex = self.pcre_compiled.groupindex
@@ -243,7 +244,7 @@ class SRE_Pattern(object):
             string = string[:endpos]
         else:
             endpos = len(string)
-        exec_result = pcre_exec(self.pcre_compiled, string, self.flags, self.pcre_extra, pos)
+        exec_result = pcre_exec(self.pcre_compiled, string, self.used_flags, self.pcre_extra, pos)
         if exec_result.num_matches == 0:
             return None
         match = SRE_Match(exec_result, self, orig_string, pos, endpos)
@@ -251,17 +252,17 @@ class SRE_Pattern(object):
     def match(self, string, pos=0, endpos=None):
         if not _isstring(string):
             string = unicode(string)
-        already_anchored = self.flags & PCRE_ANCHORED
+        already_anchored = self.used_flags & PCRE_ANCHORED
         if not already_anchored:
-            self.flags |= PCRE_ANCHORED
+            self.used_flags |= PCRE_ANCHORED
         res = self.search(string, pos, endpos)
         if not already_anchored:
-            self.flags &= ~PCRE_ANCHORED
+            self.used_flags &= ~PCRE_ANCHORED
         return res
     def split(self, string, maxsplit=0):
         if not _isstring(string):
             raise TypeError('expected string or buffer')
-        return pcre_split(self.pcre_compiled, string, maxsplit, self.flags, self.pcre_extra)
+        return pcre_split(self.pcre_compiled, string, maxsplit, self.used_flags, self.pcre_extra)
     def findall(self, string, pos=0, endpos=None):
         if not _isstring(string):
             raise TypeError('expected string or buffer')
@@ -270,7 +271,7 @@ class SRE_Pattern(object):
                 return None
             string = string[:endpos]
         res = []
-        for result in pcre_find_all(self.pcre_compiled, string, self.flags, self.pcre_extra, pos):
+        for result in pcre_find_all(self.pcre_compiled, string, self.used_flags, self.pcre_extra, pos):
             matches = ['' if match is None else match for match in result.matches]
             if len(matches) == 1:
                 res.append(matches[0])
@@ -295,7 +296,7 @@ class SRE_Pattern(object):
                 self.re = re
                 self.pos = pos
                 self.endpos = endpos
-                self.results = pcre_find_all(re.pcre_compiled, string, re.flags, re.pcre_extra, pos)
+                self.results = pcre_find_all(re.pcre_compiled, string, re.used_flags, re.pcre_extra, pos)
                 self.index = -1
             def __iter__(self):
                 return self
