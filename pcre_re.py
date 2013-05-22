@@ -105,7 +105,7 @@ This module also defines an exception 'error'.
 import sys
 import sre_compile
 import sre_parse
-import re
+import re # used for SRE_Pattern.scanner()
 from pcre import *
 
 # public symbols
@@ -178,7 +178,9 @@ class SRE_Match(object):
                         self.lastgroup = name
                         break
     def expand(self, template):
-        return _expand(self.re, self, template)
+        #return _expand(self.re, self, template)
+        #return pcre_expand(template, self.pcre_exec_result.matches, self.pcre_exec_result.named_matches)
+        return pcre_expand(self.re.pcre_compiled, self.pcre_exec_result.matches, template, self.string)
     def group(self, *args):
         pargs = [] # processed args
         for arg in args:
@@ -226,8 +228,8 @@ class SRE_Pattern(object):
         if res.num_matches:
             raise error('bogus escape: %r' % res.matches[1])
         # handle internal options with a different syntax from PCRE
-        pat = pcre_sub(pcre_compile(r'(\(\?[imsux]*)L([imsux]*\))'), r'{1}{2}', pattern)
-        pat = pcre_sub(pcre_compile(r'(\(\?[imsx]*)u([imsx]*\))'), r'(*UTF)(*UCP){1}{2}', pat)
+        pat = pcre_fsub(pcre_compile(r'(\(\?[imsux]*)L([imsux]*\))'), r'{1}{2}', pattern)
+        pat = pcre_fsub(pcre_compile(r'(\(\?[imsx]*)u([imsx]*\))'), r'(*UTF)(*UCP){1}{2}', pat)
         # process the pattern
         self.pcre_compiled = pcre_compile(pat, self.used_flags)
         self.pcre_extra = pcre_study(self.pcre_compiled, self.used_flags)
@@ -308,32 +310,41 @@ class SRE_Pattern(object):
                     raise StopIteration
         return Iterator(string, orig_string, pos, endpos, self)
     def subn(self, repl, string, count=0):
-        last_index = 0
-        last_match = ''
-        counter = 0
-        pieces = []
-        if not hasattr(repl, '__call__'):
-            repl = lambda match, template=repl: match.expand(template)
-        for match in self.finditer(string):
-            result = match.pcre_exec_result
-            if last_match != '' and result.matches[0] == '' and last_index == result.start_offsets[0]:
-                continue
-            last_match = result.matches[0]
-            counter += 1
-            pieces.append(string[last_index:result.start_offsets[0]])
-            last_index = result.end_offsets[0]
-            try:
-                pieces.append(repl(match))
-            except IndexError:
-                raise
-            except Exception, e:
-                raise error(e)
-            if count == counter:
-                break
-        pieces.append(string[last_index:])
-        return string[:0].join(pieces), counter
+        used_repl = repl
+        if hasattr(repl, '__call__'):
+            def repl_wrapper(result):
+                return repl(SRE_Match(result, self, string))
+            used_repl = repl_wrapper
+        return pcre_subn(self.pcre_compiled, used_repl, string, count, self.used_flags, extra=self.pcre_extra)
     def sub(self, repl, string, count=0):
         return self.subn(repl, string, count)[0]
+    #def subn(self, repl, string, count=0):
+        #last_index = 0
+        #last_match = ''
+        #counter = 0
+        #pieces = []
+        #if not hasattr(repl, '__call__'):
+            #repl = lambda match, template=repl: match.expand(template)
+        #for match in self.finditer(string):
+            #result = match.pcre_exec_result
+            #if last_match != '' and result.matches[0] == '' and last_index == result.start_offsets[0]:
+                #continue
+            #last_match = result.matches[0]
+            #counter += 1
+            #pieces.append(string[last_index:result.start_offsets[0]])
+            #last_index = result.end_offsets[0]
+            #try:
+                #pieces.append(repl(match))
+            #except IndexError:
+                #raise
+            #except Exception, e:
+                #raise error(e)
+            #if count == counter:
+                #break
+        #pieces.append(string[last_index:])
+        #return string[:0].join(pieces), counter
+    #def sub(self, repl, string, count=0):
+        #return self.subn(repl, string, count)[0]
     def scanner(self, *args):
         """
         undocumented but appears in tests and might be used in the wild

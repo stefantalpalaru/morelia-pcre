@@ -185,6 +185,7 @@ def main(*args):
                         line_out = '%2d+ %s\n' % (i, data[result.end_offsets[i]:])
                         tester.verify_output(line_out)
                 if result.mark:
+                    #print 'mark:\n"%s"\n' % result.mark
                     line_out = 'MK: %s\n' % tester.process_output(result.mark)
                     tester.verify_output(line_out)
             else:

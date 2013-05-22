@@ -1,4 +1,4 @@
-#cython: embedsignature=True
+#cython: embedsignature=True, profile=True, infer_types=True
 
 cimport cpcre
 from libc.stdlib cimport malloc
@@ -495,8 +495,7 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
         # named substrings
         for substring_name in re.groupindex:
             n = re.groupindex[substring_name]
-            if exec_result.num_matches > n:
-                exec_result.named_matches[substring_name] = exec_result.matches[n]
+            exec_result.named_matches[substring_name] = exec_result.matches[n]
     elif rc < 0:
         process_exec_error(rc)
 
@@ -626,7 +625,7 @@ cpdef pcre_split(Pcre re, string, int maxsplit=0, int options=0, PcreExtra extra
     return res
 
 # TODO: test this function
-cpdef pcre_subn(Pcre re, repl, string, int count=0, int options=0, PcreExtra extra=None):
+cpdef pcre_fsubn(Pcre re, repl, string, int count=0, int options=0, PcreExtra extra=None):
     cdef:
         int last_index = 0
         int counter = 0
@@ -651,6 +650,415 @@ cpdef pcre_subn(Pcre re, repl, string, int count=0, int options=0, PcreExtra ext
     pieces.append(orig_string[last_index:])
     return orig_string[:0].join(pieces), counter
 
+cpdef pcre_fsub(Pcre re, repl, string, int count=0, int options=0, PcreExtra extra=None):
+    return pcre_fsubn(re, repl, string, count, options, extra)[0]
+
+cpdef pcre_subn(Pcre re, repl, string, int count=0, int options=0, PcreExtra extra=None):
+    cdef:
+        int last_index = 0
+        int counter = 0
+        bint is_callable = 0
+    
+    orig_string = string
+    string = process_text(string)
+    pieces = []
+    if hasattr(repl, '__call__'):
+        is_callable = 1
+    last_match = ''
+    for result in pcre_find_all(re, string, options, extra):
+        if last_match != '' and result.matches[0] == '' and last_index == result.start_offsets[0]:
+            continue
+        last_match = result.matches[0]
+        counter += 1
+        if result.start_offsets[0] > last_index:
+            pieces.append(string[last_index:result.start_offsets[0]])
+        last_index = result.end_offsets[0]
+        if is_callable:
+            replacement = repl(result)
+        else:
+            #replacement = pcre_expand_old(repl, result.matches, result.named_matches)
+            replacement = pcre_expand(re, result.matches, repl, string)
+        pieces.append(replacement)
+        if count == counter:
+            break
+    if len(string) > last_index:
+        pieces.append(string[last_index:])
+    if len(pieces) == 1 and isinstance(orig_string, str):
+        return pieces[0], counter # 're' bug 1140 compatibility
+    return orig_string[:0].join(pieces), counter
+
 cpdef pcre_sub(Pcre re, repl, string, int count=0, int options=0, PcreExtra extra=None):
     return pcre_subn(re, repl, string, count, options, extra)[0]
+
+cdef:
+    enum EscapeType:
+        SIMPLE
+        GROUP
+        GROUP_NUMERIC
+        GROUP_TEXT
+
+cpdef pcre_expand_old(template, replacement_args, replacement_kwargs):
+    #from pprint import pprint
+    #pprint([template, replacement_args, replacement_kwargs])
+    result = []
+    digits = '0123456789'
+    cdef:
+        int i = 0
+        int escape_start = 0
+        int escape_end = 0
+        int last_escape_end = -1
+        bint in_escape = False
+        EscapeType escape_type
+        int template_length = len(template)
+        bint got_escape
+        bint backtrack
+        int n
+        int num_args = len(replacement_args)
+    
+    identifier_compiled = pcre_compile('^[a-zA-Z_]\\w*$')
+    identifier_extra = pcre_study(identifier_compiled)
+    for c in template:
+        got_escape = False
+        backtrack = False
+        if not in_escape and c == '\\':
+            in_escape = True
+            escape_start = i
+            escape_end = i
+            escape_type = SIMPLE
+        elif in_escape:
+            if c == 'g' and (i - escape_start) == 1:
+                escape_type = GROUP
+                if i == template_length - 1:
+                    raise PcreException('bad group name')
+            elif escape_type in [GROUP, GROUP_NUMERIC, GROUP_TEXT]:
+                if escape_type == GROUP and c in digits:
+                    escape_type = GROUP_NUMERIC
+                elif (i - escape_start) == 2:
+                    if c != '<':
+                        raise PcreException('bad group name')
+                    if i == template_length - 1:
+                        raise PcreException('unterminated group name')
+                elif c != '>':
+                    escape_type = GROUP_TEXT
+                    if i == template_length - 1:
+                        raise PcreException('unterminated group name')
+                else:
+                    if (i - escape_start) == 3:
+                        raise PcreException('bad group name')
+                    escape_end = i
+                    in_escape = False
+                    got_escape = True
+            elif escape_type == SIMPLE:
+                if c in digits:
+                    if (i - escape_start == 1 and c != '0') or i - escape_start > 1:
+                        escape_end = i
+                if c not in digits or (i - escape_start == 1 and c == '0') or i == template_length - 1:
+                    in_escape = False
+                    if escape_start != escape_end:
+                        got_escape = True
+                    if c == '\\':
+                        backtrack = True
+        if got_escape:
+            if escape_start > last_escape_end:
+                result.append(template[last_escape_end + 1:escape_start])
+            if escape_type == GROUP_TEXT:
+                key = template[escape_start + 3 : escape_end]
+                identifier_result = pcre_exec(identifier_compiled, key, extra=identifier_extra)
+                if not identifier_result.num_matches:
+                    raise PcreException('bad character in group name')
+                if key in replacement_kwargs:
+                    if replacement_kwargs[key] is None:
+                        raise PcreException('unmatched group')
+                    result.append(replacement_kwargs[key])
+                else:
+                    raise IndexError()
+            else:
+                if escape_type == SIMPLE:
+                    n = int(template[escape_start + 1 : escape_end + 1])
+                    if n >= num_args:
+                        result.append(template[escape_start:escape_end + 1])
+                elif escape_type == GROUP_NUMERIC:
+                    try:
+                        n = int(template[escape_start + 3 : escape_end])
+                    except:
+                        raise PcreException('invalid group reference')
+                    if n >= num_args:
+                        raise PcreException('invalid group reference')
+                if n < num_args:
+                    if replacement_args[n] is None:
+                        raise PcreException('unmatched group')
+                    result.append(replacement_args[n])
+            last_escape_end = escape_end
+        if backtrack:
+            in_escape = True
+            escape_start = i
+            escape_end = i
+            escape_type = SIMPLE
+
+        i += 1
+    if template_length - 1 > last_escape_end:
+        result.append(template[last_escape_end + 1:])
+    eval_format = '"""%s"""'
+    if isinstance(template, unicode):
+        eval_format = u'u"""%s"""'
+    #res = eval(eval_format % template[:0].join(result))
+    res = ''.join(result)
+    if '\\' in res:
+        res = eval(eval_format % res)
+    return res
+
+cdef get_expand_tokens(template):
+    result = []
+    digits = '0123456789'
+    cdef:
+        int i = 0
+        int escape_start = 0
+        int escape_end = 0
+        int last_escape_end = -1
+        bint in_escape = False
+        EscapeType escape_type
+        int template_length = len(template)
+        bint got_escape
+        bint backtrack
+        int n
+
+    for c in template:
+        got_escape = False
+        backtrack = False
+        if not in_escape and c == '\\':
+            in_escape = True
+            escape_start = i
+            escape_end = i
+            escape_type = SIMPLE
+        elif in_escape:
+            if c == 'g' and (i - escape_start) == 1:
+                escape_type = GROUP
+                if i == template_length - 1:
+                    raise PcreException('bad group name')
+            elif escape_type in [GROUP, GROUP_NUMERIC, GROUP_TEXT]:
+                if escape_type == GROUP and c in digits:
+                    escape_type = GROUP_NUMERIC
+                elif (i - escape_start) == 2:
+                    if c != '<':
+                        raise PcreException('bad group name')
+                    if i == template_length - 1:
+                        raise PcreException('unterminated group name')
+                elif c != '>':
+                    escape_type = GROUP_TEXT
+                    if i == template_length - 1:
+                        raise PcreException('unterminated group name')
+                else:
+                    if (i - escape_start) == 3:
+                        raise PcreException('bad group name')
+                    escape_end = i
+                    in_escape = False
+                    got_escape = True
+            elif escape_type == SIMPLE:
+                if c in digits:
+                    if (i - escape_start == 1 and c != '0') or i - escape_start > 1:
+                        escape_end = i
+                if c not in digits or (i - escape_start == 1 and c == '0') or i == template_length - 1:
+                    in_escape = False
+                    if escape_start != escape_end:
+                        got_escape = True
+                    if c == '\\':
+                        backtrack = True
+        if got_escape:
+            if escape_start > last_escape_end:
+                result.append([template[last_escape_end + 1:escape_start], None])
+            result.append([template[escape_start:escape_end], escape_type])
+            last_escape_end = escape_end
+        if backtrack:
+            in_escape = True
+            escape_start = i
+            escape_end = i
+            escape_type = SIMPLE
+
+        i += 1
+    if template_length - 1 > last_escape_end:
+        result.append([template[last_escape_end + 1:], None])
+    return result
+
+#cdef replace_expand_token(token, escape_type, replacement_args, replacement_kwargs):
+
+#cpdef pcre_expand(template, replacement_args, replacement_kwargs):
+    #result = []
+    #for token, escape_type in get_expand_tokens(template):
+        #result.append(replace_expand_token(token, escape_type, replacement_args, replacement_kwargs))
+    #return template[:0].join(result)
+
+
+# code from the original 're' module:
+
+MARK = "mark"
+DIGITS = set("0123456789")
+OCTDIGITS = set("01234567")
+LITERAL = "literal"
+ESCAPES = {
+    r"\a": (LITERAL, ord("\a")),
+    r"\b": (LITERAL, ord("\b")),
+    r"\f": (LITERAL, ord("\f")),
+    r"\n": (LITERAL, ord("\n")),
+    r"\r": (LITERAL, ord("\r")),
+    r"\t": (LITERAL, ord("\t")),
+    r"\v": (LITERAL, ord("\v")),
+    r"\\": (LITERAL, ord("\\"))
+}
+
+cdef class Tokenizer:
+    cdef:
+        object string, next
+        int index
+    def __init__(self, string):
+        self.string = string
+        self.index = 0
+        self.__next()
+    cpdef __next(self):
+        if self.index >= len(self.string):
+            self.next = None
+            return
+        char = self.string[self.index]
+        if char[0] == "\\":
+            try:
+                c = self.string[self.index + 1]
+            except IndexError:
+                raise PcreException, "bogus escape (end of line)"
+            char = char + c
+        self.index = self.index + len(char)
+        self.next = char
+    cpdef match(self, _char, skip=1):
+        if _char == self.next:
+            if skip:
+                self.__next()
+            return 1
+        return 0
+    cpdef get(self):
+        this = self.next
+        self.__next()
+        return this
+    cpdef tell(self):
+        return self.index, self.next
+    cpdef seek(self, index):
+        self.index, self.next = index
+
+cdef inline isident(char* _char):
+    return b"a" <= _char <= b"z" or b"A" <= _char <= b"Z" or _char == b"_"
+
+cdef inline bint isdigit(char* _char):
+    return b"0" <= _char <= b"9"
+
+cdef inline bint isname(name):
+    # check that group name is a valid string
+    if not isident(name[0]):
+        return False
+    for _char in name[1:]:
+        if not isident(_char) and not isdigit(_char):
+            return False
+    return True
+
+cdef inline literal(literal, p):
+    if p and p[-1][0] is LITERAL:
+        p[-1] = LITERAL, p[-1][1] + literal
+    else:
+        p.append((LITERAL, literal))
+
+cdef inline parse_template(source, pattern):
+    # parse 're' replacement string into list of literals and
+    # group references
+
+    cdef:
+        Tokenizer s = Tokenizer(source)
+
+    p = []
+    a = p.append
+    sep = source[:0]
+    if type(sep) is type(""):
+        makechar = chr
+    else:
+        makechar = unichr
+    while 1:
+        this = s.get()
+        if this is None:
+            break # end of replacement string
+        if this and this[0] == "\\":
+            # group
+            c = this[1:2]
+            if c == "g":
+                name = ""
+                if s.match("<"):
+                    while 1:
+                        char = s.get()
+                        if char is None:
+                            raise PcreException, "unterminated group name"
+                        if char == ">":
+                            break
+                        name = name + char
+                if not name:
+                    raise PcreException, "bad group name"
+                try:
+                    index = int(name)
+                    if index < 0:
+                        raise PcreException, "negative group number"
+                except ValueError:
+                    if not isname(name):
+                        raise PcreException, "bad character in group name"
+                    try:
+                        index = pattern.groupindex[name]
+                    except KeyError:
+                        raise IndexError, "unknown group name"
+                a((MARK, index))
+            elif c == "0":
+                if s.next in OCTDIGITS:
+                    this = this + s.get()
+                    if s.next in OCTDIGITS:
+                        this = this + s.get()
+                literal(makechar(int(this[1:], 8) & 0xff), p)
+            elif c in DIGITS:
+                isoctal = False
+                if s.next in DIGITS:
+                    this = this + s.get()
+                    if (c in OCTDIGITS and this[2] in OCTDIGITS and
+                        s.next in OCTDIGITS):
+                        this = this + s.get()
+                        isoctal = True
+                        literal(makechar(int(this[1:], 8) & 0xff), p)
+                if not isoctal:
+                    a((MARK, int(this[1:])))
+            else:
+                try:
+                    this = makechar(ESCAPES[this][1])
+                except KeyError:
+                    pass
+                literal(this, p)
+        else:
+            literal(this, p)
+    # convert template to groups and literals lists
+    i = 0
+    groups = []
+    groupsappend = groups.append
+    literals = [None] * len(p)
+    for c, ss in p:
+        if c is MARK:
+            groupsappend((i, ss))
+            # literal[i] is already None
+        else:
+            literals[i] = ss
+        i = i + 1
+    return groups, literals
+
+cdef inline expand_template(template, matches, string):
+    groups, literals = template
+    literals = literals[:]
+    try:
+        for index, group in groups:
+            literals[index] = s = matches[group]
+            if s is None:
+                raise PcreException, "unmatched group"
+    except IndexError:
+        raise PcreException, "invalid group reference"
+    return string[:0].join(literals)
+
+cpdef pcre_expand(Pcre pattern, matches, template, string):
+    template = parse_template(template, pattern)
+    return expand_template(template, matches, string)
 
