@@ -676,7 +676,6 @@ cpdef pcre_subn(Pcre re, repl, string, int count=0, int options=0, PcreExtra ext
         if is_callable:
             replacement = repl(result)
         else:
-            #replacement = pcre_expand_old(repl, result.matches, result.named_matches)
             replacement = pcre_expand(re, result.matches, repl, string)
         pieces.append(replacement)
         if count == counter:
@@ -715,7 +714,7 @@ cdef class Tokenizer:
         self.string = string
         self.index = 0
         self.__next()
-    cpdef __next(self):
+    cdef __next(self):
         if self.index >= len(self.string):
             self.next = None
             return
@@ -728,19 +727,19 @@ cdef class Tokenizer:
             char = char + c
         self.index = self.index + len(char)
         self.next = char
-    cpdef match(self, _char, skip=1):
+    cdef match(self, _char, skip=1):
         if _char == self.next:
             if skip:
                 self.__next()
             return 1
         return 0
-    cpdef get(self):
+    cdef get(self):
         this = self.next
         self.__next()
         return this
-    cpdef tell(self):
+    cdef tell(self):
         return self.index, self.next
-    cpdef seek(self, index):
+    cdef seek(self, index):
         self.index, self.next = index
 
 cdef inline isident(char* _char):
