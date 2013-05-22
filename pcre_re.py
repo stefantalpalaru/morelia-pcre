@@ -157,7 +157,6 @@ class SRE_Match(object):
         self.lastgroup = exec_result.lastgroup
     def expand(self, template):
         #return _expand(self.re, self, template)
-        #return pcre_expand(template, self.pcre_exec_result.matches, self.pcre_exec_result.named_matches)
         return pcre_expand(self.re.pcre_compiled, self.pcre_exec_result.matches, template, self.string)
     def group(self, *args):
         pargs = [] # processed args
