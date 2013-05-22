@@ -103,9 +103,6 @@ This module also defines an exception 'error'.
 """
 
 import sys
-import sre_compile
-import sre_parse
-import re # used for SRE_Pattern.scanner()
 from pcre import *
 
 # public symbols
@@ -236,7 +233,6 @@ def escape(pattern):
 _cache = {}
 _cache_repl = {}
 
-#_pattern_type = type(sre_compile.compile("", 0))
 _pattern_type = SRE_Pattern
 
 _MAXCACHE = 100
@@ -252,11 +248,9 @@ def _compile(*key):
         if flags:
             raise ValueError('Cannot process flags argument with a compiled pattern')
         return pattern
-    #if not sre_compile.isstring(pattern):
     if not isinstance(pattern, basestring):
         raise TypeError, "first argument must be string or compiled pattern"
     try:
-        #p = sre_compile.compile(pattern, flags)
         p = SRE_Pattern(pattern, flags)
     except error, v:
         raise error, v # invalid expression
@@ -264,41 +258,6 @@ def _compile(*key):
         _cache.clear()
     _cache[cachekey] = p
     return p
-
-def _compile_repl(*key):
-    # internal: compile replacement pattern
-    p = _cache_repl.get(key)
-    if p is not None:
-        return p
-    repl, pattern = key
-    try:
-        p = sre_parse.parse_template(repl, pattern)
-    except error, v:
-        raise error, v # invalid expression
-    if len(_cache_repl) >= _MAXCACHE:
-        _cache_repl.clear()
-    _cache_repl[key] = p
-    return p
-
-def _expand(pattern, match, template):
-    # internal: match.expand implementation hook
-    template = sre_parse.parse_template(template, pattern)
-    return sre_parse.expand_template(template, match)
-
-def _subx(pattern, template):
-    # internal: pattern.sub/subn implementation helper
-    template = _compile_repl(template, pattern)
-    if not template[0] and len(template[1]) == 1:
-        # literal replacement
-        return template[1][0]
-    def filter(match, template=template):
-        return sre_parse.expand_template(template, match)
-    return filter
-
-def _isstring(s):
-    if isinstance(s, str) or isinstance(s, unicode):
-        return 1
-    return 0
 
 # register myself for pickling
 
@@ -314,6 +273,8 @@ copy_reg.pickle(_pattern_type, _pickle, _compile)
 
 class Scanner:
     def __init__(self, lexicon, flags=0):
+        import sre_compile
+        import sre_parse
         from sre_constants import BRANCH, SUBPATTERN
         self.lexicon = lexicon
         # combine phrases into a compound pattern
