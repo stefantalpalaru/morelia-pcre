@@ -688,11 +688,12 @@ cpdef pcre_fsubn(Pcre re, repl, string, int count=0, int options=0, PcreExtra ex
 cpdef pcre_fsub(Pcre re, repl, string, int count=0, int options=0, PcreExtra extra=None):
     return pcre_fsubn(re, repl, string, count, options, extra)[0]
 
-cpdef pcre_subn(Pcre re, repl, string, int count=0, int options=0, PcreExtra extra=None):
+cpdef inline pcre_subn(Pcre re, repl, string, int count=0, int options=0, PcreExtra extra=None):
     cdef:
         int last_index = 0
         int counter = 0
         bint is_callable = 0
+        ExecResult result
     
     orig_string = string
     string = process_text(string)
@@ -723,6 +724,196 @@ cpdef pcre_subn(Pcre re, repl, string, int count=0, int options=0, PcreExtra ext
 
 cpdef pcre_sub(Pcre re, repl, string, int count=0, int options=0, PcreExtra extra=None):
     return pcre_subn(re, repl, string, count, options, extra)[0]
+
+cdef class SRE_Match(object):
+    cdef object __weakref__
+    cdef public:
+        ExecResult pcre_exec_result
+        SRE_Pattern re
+        object string
+        int pos
+        object endpos
+        object lastindex
+        object lastgroup
+        object _regs
+    def __cinit__(self):
+        self._regs = None
+    def __init__(self, exec_result, re, string, pos=0, endpos=None):
+        self.pcre_exec_result = exec_result
+        self.re = re
+        self.string = string
+        self.pos = pos
+        self.endpos = endpos
+        self.lastindex = exec_result.lastindex
+        self.lastgroup = exec_result.lastgroup
+
+    @property
+    def regs(self):
+        if self._regs is None:
+            if self.pcre_exec_result.num_matches:
+                self._regs = tuple(zip(self.pcre_exec_result.start_offsets, self.pcre_exec_result.end_offsets))
+        return self._regs
+
+    cpdef expand(self, template):
+        return pcre_expand(self.re.pcre_compiled, self.pcre_exec_result.matches, template, self.string)
+    def group(self, *args):
+        pargs = [] # processed args
+        for arg in args:
+            if isinstance(arg, basestring):
+                try:
+                    pargs.append(self.re.groupindex[arg])
+                except:
+                    raise IndexError('no such group')
+            else:
+                pargs.append(arg)
+        try:
+            if len(pargs) == 0:
+                res = self.pcre_exec_result.matches[0]
+            elif len(pargs) == 1:
+                res = self.pcre_exec_result.matches[pargs[0]]
+            else:
+                res = tuple([self.pcre_exec_result.matches[arg] for arg in pargs])
+        except:
+            raise IndexError('no such group')
+        return res
+    cpdef groups(self, default=None):
+        return tuple([default if m is None else m for m in self.pcre_exec_result.matches[1:]])
+    cpdef groupdict(self, default=None):
+        return dict([(n, default if m is None else m) for n, m in self.pcre_exec_result.named_matches.items()])
+    cpdef start(self, group=0):
+        try:
+            return self.pcre_exec_result.start_offsets[group]
+        except:
+            raise IndexError('no such group')
+    cpdef end(self, group=0):
+        try:
+            return self.pcre_exec_result.end_offsets[group]
+        except:
+            raise IndexError('no such group')
+    cpdef span(self, group=0):
+        return (self.start(group), self.end(group))
+
+cdef class SRE_Pattern(object):
+    cdef:
+        object __weakref__
+        object _subn_repl
+        object _subn_string
+    cdef public:
+        object pattern
+        object flags
+        object used_flags
+        Pcre pcre_compiled
+        PcreExtra pcre_extra
+        int groups
+        object groupindex
+    def __init__(self, pattern, flags):
+        self.pattern = pattern
+        self.flags = flags
+        self.used_flags = flags | PCRE_NO_UTF8_CHECK
+        # don't support some escapes that are invalid in 're' (just \ddd so we don't mess with the back references)
+        res = pcre_exec(pcre_compile(r'(?:^|[^\\])(\\[89]\d\d)'), pattern)
+        if res.num_matches:
+            raise PcreException('bogus escape: %r' % res.matches[1])
+        # handle internal options with a different syntax from PCRE
+        pat = pcre_fsub(pcre_compile(r'(\(\?[imsux]*)L([imsux]*\))'), r'{1}{2}', pattern)
+        pat = pcre_fsub(pcre_compile(r'(\(\?[imsx]*)u([imsx]*\))'), r'(*UTF)(*UCP){1}{2}', pat)
+        # process the pattern
+        self.pcre_compiled = pcre_compile(pat, self.used_flags)
+        self.pcre_extra = pcre_study(self.pcre_compiled, self.used_flags)
+        pcre_info(self.pcre_compiled, self.pcre_extra)
+        self.groups = self.pcre_compiled.groups
+        self.groupindex = self.pcre_compiled.groupindex
+    cpdef search(self, string, pos=0, endpos=None):
+        if not isinstance(string, basestring):
+            string = unicode(string)
+        orig_string = string
+        if endpos is not None:
+            if endpos < pos:
+                return None
+            string = string[:endpos]
+        else:
+            endpos = len(string)
+        exec_result = pcre_exec(self.pcre_compiled, string, self.used_flags, self.pcre_extra, pos)
+        if exec_result.num_matches == 0:
+            return None
+        match = SRE_Match(exec_result, self, orig_string, pos, endpos)
+        return match
+    cpdef match(self, string, pos=0, endpos=None):
+        if not isinstance(string, basestring):
+            string = unicode(string)
+        already_anchored = self.used_flags & PCRE_ANCHORED
+        if not already_anchored:
+            self.used_flags |= PCRE_ANCHORED
+        res = self.search(string, pos, endpos)
+        if not already_anchored:
+            self.used_flags &= ~PCRE_ANCHORED
+        return res
+    cpdef split(self, string, maxsplit=0):
+        if not isinstance(string, basestring):
+            raise TypeError('expected string or buffer')
+        return pcre_split(self.pcre_compiled, string, maxsplit, self.used_flags, self.pcre_extra)
+    cpdef findall(self, string, pos=0, endpos=None):
+        if not isinstance(string, basestring):
+            raise TypeError('expected string or buffer')
+        if endpos is not None:
+            if endpos < pos:
+                return None
+            string = string[:endpos]
+        res = []
+        for result in pcre_find_all(self.pcre_compiled, string, self.used_flags, self.pcre_extra, pos):
+            matches = ['' if match is None else match for match in result.matches]
+            if len(matches) == 1:
+                res.append(matches[0])
+            elif len(matches) == 2:
+                res.append(matches[1])
+            else:
+                res.append(tuple(matches[1:]))
+        return res
+    def finditer(self, string, pos=0, endpos=None):
+        if not isinstance(string, basestring):
+            raise TypeError('expected string or buffer')
+        orig_string = string
+        if endpos is not None:
+            if endpos < pos:
+                return None
+            string = string[:endpos]
+        else:
+            endpos = len(string)
+        class Iterator():
+            def __init__(self, string, orig_string, pos, endpos, re):
+                self.orig_string = orig_string
+                self.re = re
+                self.pos = pos
+                self.endpos = endpos
+                self.results = pcre_find_all(re.pcre_compiled, string, re.used_flags, re.pcre_extra, pos)
+                self.index = -1
+            def __iter__(self):
+                return self
+            def next(self):
+                try:
+                    self.index += 1
+                    return SRE_Match(self.results[self.index], self.re, self.orig_string, self.pos, self.endpos)
+                except IndexError:
+                    raise StopIteration
+        return Iterator(string, orig_string, pos, endpos, self)
+    cpdef _repl_wrapper(self, result):
+        return self._subn_repl(SRE_Match(result, self, self._subn_string))
+    cpdef subn(self, repl, string, count=0):
+        used_repl = repl
+        if hasattr(repl, '__call__'):
+            self._subn_repl = repl
+            self._subn_string = string
+            used_repl = self._repl_wrapper
+        return pcre_subn(self.pcre_compiled, used_repl, string, count, self.used_flags, extra=self.pcre_extra)
+    cpdef sub(self, repl, string, count=0):
+        return self.subn(repl, string, count)[0]
+    def scanner(self, *args):
+        """
+        undocumented but appears in tests and might be used in the wild
+        so let's have it but don't bother converting it to PCRE
+        """
+        import re
+        return re.compile(self.pattern, self.flags).scanner(*args)
 
 ### code from the original 're' module:
 

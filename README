@@ -4,7 +4,10 @@ Why 'morelia-pcre'? Because 'python-pcre' was taken :-)
 
 Testing:
 ./setup.py build_ext -i
+./test_re.py # 2 tests are known to fail with "maximum recursion limit exceeded"
 ./testsuite.py testdata/testinput1 testdata/testoutput1 | less
+# during development:
+./setup.py build_ext -i && { ./test_re.py; ./testsuite.py testdata/testinput1 testdata/testoutput1; }
 
 Code and issue tracker available at: https://github.com/stefantalpalaru/morelia-pcre
 Tested with pcre-8.32, cython-0.19.1 and python-2.7.4
