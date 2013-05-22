@@ -1,6 +1,6 @@
-#cython: embedsignature=True, profile=True, infer_types=True
+#cython: embedsignature=True, infer_types=True, profile=True
 
-cimport cpcre
+cimport cpcre, cython
 from libc.stdlib cimport malloc
 from libc.string cimport const_char
 
@@ -283,6 +283,8 @@ cdef class ExecResult:
         object end_offsets
         object matches
         object named_matches
+        object lastindex
+        object lastgroup
     def __cinit__(self):
         self.num_matches = 0
         self.captured_all = 1
@@ -292,6 +294,8 @@ cdef class ExecResult:
         self.named_matches = {}
         self.ovector = NULL
         self.markptr = NULL
+        self.lastindex = None
+        self.lastgroup = None
     def __dealloc__(self):
         if self.ovector is not NULL:
             cpcre.pcre_free(self.ovector)
@@ -301,15 +305,18 @@ cdef class ExecResult:
                 return None
             return self.markptr
 
-cdef process_text(text):
+@cython.profile(False)
+cdef inline process_text(text):
     if isinstance(text, unicode):
         text = text.encode('UTF-8')
     return text
 
-cdef unicode tounicode(char* s):
+@cython.profile(False)
+cdef inline unicode tounicode(char* s):
     return s.decode('UTF-8', 'strict')
 
-cdef unicode tounicode_with_length(char* s, size_t length):
+@cython.profile(False)
+cdef inline unicode tounicode_with_length(char* s, size_t length):
     return s[:length].decode('UTF-8', 'strict')
 
 ERROR_CODES = {
@@ -335,6 +342,7 @@ ERROR_CODES = {
     PCRE_ERROR_BADLENGTH: 'pcre_exec() was called with a negative value for the length argument',
 }
 
+@cython.profile(False)
 cdef inline process_exec_error(int rc):
     if rc in ERROR_CODES:
         raise PcreException(ERROR_CODES[rc])
@@ -430,6 +438,7 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
         int i, n
         int start, end
         bint subject_is_unicode = isinstance(subject, unicode)
+        int last_index, end_offset, length, m_len
 
     subject = process_text(subject)
     subject_length = len(subject)
@@ -497,6 +506,31 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
         for substring_name in re.groupindex:
             n = re.groupindex[substring_name]
             exec_result.named_matches[substring_name] = exec_result.matches[n]
+
+        # lastindex and lastgroup
+        if re.groups > 0:
+            last_index = 0
+            end_offset = -1
+            length = 0
+            for i in xrange(1, exec_result.num_matches):
+                if exec_result.matches[i] is None:
+                    m_len = 0
+                else:
+                    m_len = len(exec_result.matches[i])
+                if exec_result.end_offsets[i] > end_offset:
+                    end_offset = exec_result.end_offsets[i]
+                    length = m_len
+                    last_index = i
+                elif exec_result.end_offsets[i] == end_offset:
+                    if m_len > length:
+                        length = m_len
+                        last_index = i
+            if last_index:
+                exec_result.lastindex = last_index
+                for name in re.groupindex:
+                    if re.groupindex[name] == last_index:
+                        exec_result.lastgroup = name
+                        break
     elif rc < 0:
         process_exec_error(rc)
 
@@ -743,12 +777,15 @@ cdef class Tokenizer:
     cdef seek(self, index):
         self.index, self.next = index
 
+@cython.profile(False)
 cdef inline isident(char* _char):
     return b"a" <= _char <= b"z" or b"A" <= _char <= b"Z" or _char == b"_"
 
+@cython.profile(False)
 cdef inline bint isdigit(char* _char):
     return b"0" <= _char <= b"9"
 
+@cython.profile(False)
 cdef inline bint isname(name):
     # check that group name is a valid string
     if not isident(name[0]):
@@ -758,6 +795,7 @@ cdef inline bint isname(name):
             return False
     return True
 
+@cython.profile(False)
 cdef inline literal(literal, p):
     if p and p[-1][0] is LITERAL:
         p[-1] = LITERAL, p[-1][1] + literal

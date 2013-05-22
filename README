@@ -7,7 +7,7 @@ Testing:
 ./testsuite.py testdata/testinput1 testdata/testoutput1 | less
 
 Code and issue tracker available at: https://github.com/stefantalpalaru/morelia-pcre
-Tested with pcre-8.32, cython-0.17.2 and python-2.7.3
+Tested with pcre-8.32, cython-0.19.1 and python-2.7.4
 
 Sphinx docs: http://stefantalpalaru.github.com/morelia-pcre/index.html
 

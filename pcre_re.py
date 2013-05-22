@@ -153,30 +153,8 @@ class SRE_Match(object):
         self.pos = pos
         self.endpos = endpos
         self.regs = tuple(zip(exec_result.start_offsets, exec_result.end_offsets))
-        # lastindex and lastgroup
-        if re.groups > 0:
-            last_index = 0
-            end_offset = -1
-            length = 0
-            for i in xrange(1, exec_result.num_matches):
-                if exec_result.matches[i] is None:
-                    m_len = 0
-                else:
-                    m_len = len(exec_result.matches[i])
-                if exec_result.end_offsets[i] > end_offset:
-                    end_offset = exec_result.end_offsets[i]
-                    length = m_len
-                    last_index = i
-                elif exec_result.end_offsets[i] == end_offset:
-                    if m_len > length:
-                        length = m_len
-                        last_index = i
-            if last_index:
-                self.lastindex = last_index
-                for name in re.groupindex:
-                    if re.groupindex[name] == last_index:
-                        self.lastgroup = name
-                        break
+        self.lastindex = exec_result.lastindex
+        self.lastgroup = exec_result.lastgroup
     def expand(self, template):
         #return _expand(self.re, self, template)
         #return pcre_expand(template, self.pcre_exec_result.matches, self.pcre_exec_result.named_matches)
