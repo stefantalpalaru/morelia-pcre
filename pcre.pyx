@@ -427,7 +427,7 @@ cpdef pcre_info(Pcre re, PcreExtra extra=None):
             re.groupindex[substring_name] = n
             tabptr += name_entry_size
 
-cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offset=0):
+cpdef ExecResult pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offset=0):
     cdef:
         int rc
         int subject_length
@@ -438,7 +438,7 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
         int i, n
         int start, end
         bint subject_is_unicode = isinstance(subject, unicode)
-        int last_index, end_offset, length, m_len
+        int last_index, end_offset, length, m_len, match_len
 
     subject = process_text(subject)
     subject_length = len(subject)
@@ -476,22 +476,26 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
             if ovector[i * 2] >= 0:
                 match = match_ptr[:match_len]
                 if subject_is_unicode:
-                    try:
-                        match = tounicode_with_length(<char*>match_ptr, match_len)
-                    except:
-                        pass
+                    #try:
+                        #match = tounicode_with_length(<char*>match_ptr, match_len)
+                    #except:
+                        #pass
+                    match = tounicode_with_length(<char*>match_ptr, match_len)
                 exec_result.matches.append(match)
             else:
                 exec_result.matches.append(None)
             start = ovector[i * 2]
             end = ovector[i * 2 + 1]
             if subject_is_unicode and start >= 0:
-                try:
-                    str_before = tounicode_with_length(<char*>subject, ovector[i * 2])
-                    start = len(str_before)
-                    end = start + len(match)
-                except:
-                    pass
+                #try:
+                    #str_before = tounicode_with_length(<char*>subject, ovector[i * 2])
+                    #start = len(str_before)
+                    #end = start + len(match)
+                #except:
+                    #pass
+                str_before = tounicode_with_length(<char*>subject, ovector[i * 2])
+                start = len(str_before)
+                end = start + len(match)
             exec_result.start_offsets.append(start)
             exec_result.end_offsets.append(end)
             cpcre.pcre_free_substring(match_ptr)
@@ -512,7 +516,7 @@ cpdef pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offse
             last_index = 0
             end_offset = -1
             length = 0
-            for i in xrange(1, exec_result.num_matches):
+            for i in range(1, exec_result.num_matches):
                 if exec_result.matches[i] is None:
                     m_len = 0
                 else:
@@ -645,6 +649,7 @@ cpdef pcre_split(Pcre re, string, int maxsplit=0, int options=0, PcreExtra extra
     cdef:
         int last_index = 0
         int counter = 0
+        ExecResult result
     
     string = process_text(string)
     res = []
@@ -665,6 +670,7 @@ cpdef pcre_fsubn(Pcre re, repl, string, int count=0, int options=0, PcreExtra ex
         int last_index = 0
         int counter = 0
         bint is_callable = 0
+        ExecResult result
     
     orig_string = string
     string = process_text(string)
@@ -793,6 +799,30 @@ cdef class SRE_Match(object):
     cpdef span(self, group=0):
         return (self.start(group), self.end(group))
 
+cdef class Iterator:
+    cdef:
+        object orig_string
+        SRE_Pattern re
+        int pos
+        int endpos
+        object results
+        int index
+    def __init__(self, string, orig_string, pos, endpos, re):
+        self.orig_string = orig_string
+        self.re = re
+        self.pos = pos
+        self.endpos = endpos
+        self.results = pcre_find_all(re.pcre_compiled, string, re.used_flags, re.pcre_extra, pos)
+        self.index = -1
+    def __iter__(self):
+        return self
+    def __next__(self):
+        try:
+            self.index += 1
+            return SRE_Match(self.results[self.index], self.re, self.orig_string, self.pos, self.endpos)
+        except IndexError:
+            raise StopIteration
+
 cdef class SRE_Pattern(object):
     cdef:
         object __weakref__
@@ -811,7 +841,7 @@ cdef class SRE_Pattern(object):
         self.flags = flags
         self.used_flags = flags | PCRE_NO_UTF8_CHECK
         # don't support some escapes that are invalid in 're' (just \ddd so we don't mess with the back references)
-        res = pcre_exec(pcre_compile(r'(?:^|[^\\])(\\[89]\d\d)'), pattern)
+        cdef ExecResult res = pcre_exec(pcre_compile(r'(?:^|[^\\])(\\[89]\d\d)'), pattern)
         if res.num_matches:
             raise PcreException('bogus escape: %r' % res.matches[1])
         # handle internal options with a different syntax from PCRE
@@ -824,6 +854,9 @@ cdef class SRE_Pattern(object):
         self.groups = self.pcre_compiled.groups
         self.groupindex = self.pcre_compiled.groupindex
     cpdef search(self, string, pos=0, endpos=None):
+        cdef:
+            ExecResult exec_result
+
         if not isinstance(string, basestring):
             string = unicode(string)
         orig_string = string
@@ -836,8 +869,7 @@ cdef class SRE_Pattern(object):
         exec_result = pcre_exec(self.pcre_compiled, string, self.used_flags, self.pcre_extra, pos)
         if exec_result.num_matches == 0:
             return None
-        match = SRE_Match(exec_result, self, orig_string, pos, endpos)
-        return match
+        return SRE_Match(exec_result, self, orig_string, pos, endpos)
     cpdef match(self, string, pos=0, endpos=None):
         if not isinstance(string, basestring):
             string = unicode(string)
@@ -853,6 +885,7 @@ cdef class SRE_Pattern(object):
             raise TypeError('expected string or buffer')
         return pcre_split(self.pcre_compiled, string, maxsplit, self.used_flags, self.pcre_extra)
     cpdef findall(self, string, pos=0, endpos=None):
+        cdef ExecResult result
         if not isinstance(string, basestring):
             raise TypeError('expected string or buffer')
         if endpos is not None:
@@ -879,22 +912,6 @@ cdef class SRE_Pattern(object):
             string = string[:endpos]
         else:
             endpos = len(string)
-        class Iterator():
-            def __init__(self, string, orig_string, pos, endpos, re):
-                self.orig_string = orig_string
-                self.re = re
-                self.pos = pos
-                self.endpos = endpos
-                self.results = pcre_find_all(re.pcre_compiled, string, re.used_flags, re.pcre_extra, pos)
-                self.index = -1
-            def __iter__(self):
-                return self
-            def next(self):
-                try:
-                    self.index += 1
-                    return SRE_Match(self.results[self.index], self.re, self.orig_string, self.pos, self.endpos)
-                except IndexError:
-                    raise StopIteration
         return Iterator(string, orig_string, pos, endpos, self)
     cpdef _repl_wrapper(self, result):
         return self._subn_repl(SRE_Match(result, self, self._subn_string))
@@ -1089,7 +1106,7 @@ cdef inline expand_template(template, matches, string):
         raise PcreException, "invalid group reference"
     return string[:0].join(literals)
 
-cpdef pcre_expand(Pcre pattern, matches, template, string):
+cpdef inline pcre_expand(Pcre pattern, matches, template, string):
     template = parse_template(template, pattern)
     return expand_template(template, matches, string)
 
