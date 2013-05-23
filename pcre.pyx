@@ -713,6 +713,7 @@ cpdef inline pcre_subn(Pcre re, repl, string, int count=0, int options=0, PcreEx
         int counter = 0
         bint is_callable = 0
         ExecResult result
+        int start_offset
     
     orig_string = string
     string = process_text(string)
@@ -721,12 +722,13 @@ cpdef inline pcre_subn(Pcre re, repl, string, int count=0, int options=0, PcreEx
         is_callable = 1
     last_match = ''
     for result in pcre_find_all(re, string, options, extra):
-        if last_match != '' and result.matches[0] == '' and last_index == result.start_offsets[0]:
+        start_offset = result.start_offsets[0]
+        if last_match != '' and result.matches[0] == '' and last_index == start_offset:
             continue
         last_match = result.matches[0]
         counter += 1
-        if result.start_offsets[0] > last_index:
-            pieces.append(string[last_index:result.start_offsets[0]])
+        if start_offset > last_index:
+            pieces.append(string[last_index:start_offset])
         last_index = result.end_offsets[0]
         if is_callable:
             replacement = repl(result)
@@ -983,7 +985,7 @@ cdef class SRE_Tokenizer:
             char = char + c
         self.index = self.index + len(char)
         self.next = char
-    cdef match(self, _char, skip=1):
+    cdef match(self, _char, bint skip=1):
         if _char == self.next:
             if skip:
                 self.__next()
@@ -995,7 +997,7 @@ cdef class SRE_Tokenizer:
         return this
     cdef tell(self):
         return self.index, self.next
-    cdef seek(self, index):
+    cdef seek(self, int index):
         self.index, self.next = index
 
 @cython.profile(False)
@@ -1029,6 +1031,7 @@ cdef inline parse_template(source, pattern):
 
     cdef:
         SRE_Tokenizer s = SRE_Tokenizer(source)
+        int i
 
     p = []
     a = p.append
@@ -1108,6 +1111,8 @@ cdef inline parse_template(source, pattern):
     return groups, literals
 
 cdef inline expand_template(template, matches, string):
+    cdef:
+        int index, group
     groups, literals = template
     literals = literals[:]
     try:
