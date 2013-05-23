@@ -103,7 +103,8 @@ This module also defines an exception 'error'.
 """
 
 import sys
-from pcre import *
+import pcre
+from pcre import SRE_Match, SRE_Pattern
 
 # public symbols
 __all__ = [ "match", "search", "sub", "subn", "split", "findall",
@@ -114,28 +115,20 @@ __all__ = [ "match", "search", "sub", "subn", "split", "findall",
 __version__ = "2.2.1"
 
 # flags
-#I = IGNORECASE = sre_compile.SRE_FLAG_IGNORECASE # ignore case
-I = IGNORECASE = PCRE_CASELESS # ignore case
-#L = LOCALE = sre_compile.SRE_FLAG_LOCALE # assume current 8-bit locale
+I = IGNORECASE = pcre.PCRE_CASELESS # ignore case
 L = LOCALE = 0 # assume current 8-bit locale
-#U = UNICODE = sre_compile.SRE_FLAG_UNICODE # assume unicode locale
-U = UNICODE = PCRE_UCP|PCRE_UTF8 # assume unicode locale
-#M = MULTILINE = sre_compile.SRE_FLAG_MULTILINE # make anchors look for newline
-M = MULTILINE = PCRE_MULTILINE # make anchors look for newline
-#S = DOTALL = sre_compile.SRE_FLAG_DOTALL # make dot match newline
-S = DOTALL = PCRE_DOTALL # make dot match newline
-#X = VERBOSE = sre_compile.SRE_FLAG_VERBOSE # ignore whitespace and comments
-X = VERBOSE = PCRE_EXTENDED # ignore whitespace and comments
+U = UNICODE = pcre.PCRE_UCP|pcre.PCRE_UTF8 # assume unicode locale
+M = MULTILINE = pcre.PCRE_MULTILINE # make anchors look for newline
+S = DOTALL = pcre.PCRE_DOTALL # make dot match newline
+X = VERBOSE = pcre.PCRE_EXTENDED # ignore whitespace and comments
 
 # sre extensions (experimental, don't rely on these)
-#T = TEMPLATE = sre_compile.SRE_FLAG_TEMPLATE # disable backtracking
 T = TEMPLATE = 0 # disable backtracking
-#DEBUG = sre_compile.SRE_FLAG_DEBUG # dump pattern after compilation
 DEBUG = 0 # dump pattern after compilation
 
 # sre exception
 #error = sre_compile.error
-error = PcreException
+error = pcre.PcreException
 
 # --------------------------------------------------------------------
 # classes (moved to pcre.pyx)

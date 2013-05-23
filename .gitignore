@@ -9,3 +9,4 @@ pcre.so
 build
 vim.session
 tmp*
+_globals*

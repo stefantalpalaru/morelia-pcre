@@ -4,229 +4,238 @@ cimport cpcre, cython
 from libc.stdlib cimport malloc
 from libc.string cimport const_char
 
-# Options. Some are compile-time only, some are run-time only, and some are
-# both, so we keep them all distinct. However, almost all the bits in the options
-# word are now used. In the long run, we may have to re-use some of the
-# compile-time only bits for runtime options, or vice versa. In the comments
-# below, "compile", "exec", and "DFA exec" mean that the option is permitted to
-# be set for those functions; "used in" means that an option may be set only for
-# compile, but is subsequently referenced in exec and/or DFA exec. Any of the
+# Public options. Some are compile-time only, some are run-time only, and some
+# are both, so we keep them all distinct. However, almost all the bits in the
+# options word are now used. In the long run, we may have to re-use some of the
+# compile-time only bits for runtime options, or vice versa. Any of the
 # compile-time options may be inspected during studying (and therefore JIT
 # compiling).
 
-PCRE_CASELESS =           0x00000001  # Compile 
-PCRE_MULTILINE =          0x00000002  # Compile 
-PCRE_DOTALL =             0x00000004  # Compile 
-PCRE_EXTENDED =           0x00000008  # Compile 
-PCRE_ANCHORED =           0x00000010  # Compile, exec, DFA exec 
-PCRE_DOLLAR_ENDONLY =     0x00000020  # Compile, used in exec, DFA exec 
-PCRE_EXTRA =              0x00000040  # Compile 
-PCRE_NOTBOL =             0x00000080  # Exec, DFA exec 
-PCRE_NOTEOL =             0x00000100  # Exec, DFA exec 
-PCRE_UNGREEDY =           0x00000200  # Compile 
-PCRE_NOTEMPTY =           0x00000400  # Exec, DFA exec 
-PCRE_UTF8 =               0x00000800  # Compile (same as PCRE_UTF16)
-PCRE_UTF16 =              0x00000800  # Compile (same as PCRE_UTF8)
-PCRE_NO_AUTO_CAPTURE =    0x00001000  # Compile 
-PCRE_NO_UTF8_CHECK =      0x00002000  # Compile (same as PCRE_NO_UTF16_CHECK)
-PCRE_NO_UTF16_CHECK =     0x00002000  # Compile (same as PCRE_NO_UTF8_CHECK)
-PCRE_AUTO_CALLOUT =       0x00004000  # Compile 
-PCRE_PARTIAL_SOFT =       0x00008000  # Exec, DFA exec 
-PCRE_PARTIAL =            0x00008000  # Backwards compatible synonym 
-PCRE_DFA_SHORTEST =       0x00010000  # DFA exec 
-PCRE_DFA_RESTART =        0x00020000  # DFA exec 
-PCRE_FIRSTLINE =          0x00040000  # Compile, used in exec, DFA exec 
-PCRE_DUPNAMES =           0x00080000  # Compile 
-PCRE_NEWLINE_CR =         0x00100000  # Compile, exec, DFA exec 
-PCRE_NEWLINE_LF =         0x00200000  # Compile, exec, DFA exec 
-PCRE_NEWLINE_CRLF =       0x00300000  # Compile, exec, DFA exec 
-PCRE_NEWLINE_ANY =        0x00400000  # Compile, exec, DFA exec 
-PCRE_NEWLINE_ANYCRLF =    0x00500000  # Compile, exec, DFA exec 
-PCRE_BSR_ANYCRLF =        0x00800000  # Compile, exec, DFA exec 
-PCRE_BSR_UNICODE =        0x01000000  # Compile, exec, DFA exec 
-PCRE_JAVASCRIPT_COMPAT =  0x02000000  # Compile, used in exec 
-PCRE_NO_START_OPTIMIZE =  0x04000000  # Compile, exec, DFA exec 
-PCRE_NO_START_OPTIMISE =  0x04000000  # Synonym 
-PCRE_PARTIAL_HARD =       0x08000000  # Exec, DFA exec 
-PCRE_NOTEMPTY_ATSTART =   0x10000000  # Exec, DFA exec 
-PCRE_UCP =                0x20000000  # Compile, used in exec, DFA exec 
+# Some options for pcre_compile() change its behaviour but do not affect the
+# behaviour of the execution functions. Other options are passed through to the
+# execution functions and affect their behaviour, with or without affecting the
+# behaviour of pcre_compile().
 
-# Exec-time and get/set-time error codes
+# Options that can be passed to pcre_compile() are tagged Cx below, with these
+# variants:
 
-PCRE_ERROR_NOMATCH =         (-1)
-PCRE_ERROR_NULL =            (-2)
-PCRE_ERROR_BADOPTION =       (-3)
-PCRE_ERROR_BADMAGIC =        (-4)
-PCRE_ERROR_UNKNOWN_OPCODE =  (-5)
-PCRE_ERROR_UNKNOWN_NODE =    (-5)  # For backward compatibility 
-PCRE_ERROR_NOMEMORY =        (-6)
-PCRE_ERROR_NOSUBSTRING =     (-7)
-PCRE_ERROR_MATCHLIMIT =      (-8)
-PCRE_ERROR_CALLOUT =         (-9)  # Never used by PCRE itself 
-PCRE_ERROR_BADUTF8 =        (-10)
-PCRE_ERROR_BADUTF16 =        (-10)
-PCRE_ERROR_BADUTF8_OFFSET = (-11)
-PCRE_ERROR_BADUTF16_OFFSET = (-11)
-PCRE_ERROR_PARTIAL =        (-12)
-PCRE_ERROR_BADPARTIAL =     (-13)
-PCRE_ERROR_INTERNAL =       (-14)
-PCRE_ERROR_BADCOUNT =       (-15)
-PCRE_ERROR_DFA_UITEM =      (-16)
-PCRE_ERROR_DFA_UCOND =      (-17)
-PCRE_ERROR_DFA_UMLIMIT =    (-18)
-PCRE_ERROR_DFA_WSSIZE =     (-19)
-PCRE_ERROR_DFA_RECURSE =    (-20)
-PCRE_ERROR_RECURSIONLIMIT = (-21)
-PCRE_ERROR_NULLWSLIMIT =    (-22)  # No longer actually used 
-PCRE_ERROR_BADNEWLINE =     (-23)
-PCRE_ERROR_BADOFFSET =      (-24)
-PCRE_ERROR_SHORTUTF8 =      (-25)
-PCRE_ERROR_SHORTUTF16 =      (-25)
-PCRE_ERROR_RECURSELOOP =    (-26)
-PCRE_ERROR_JIT_STACKLIMIT = (-27)
-PCRE_ERROR_BADMODE =        (-28)
-PCRE_ERROR_BADENDIANNESS =  (-29)
-PCRE_ERROR_DFA_BADRESTART = (-30)
-PCRE_ERROR_JIT_BADOPTION =  (-31)
-PCRE_ERROR_BADLENGTH =      (-32)
+# C1   Affects compile only
+# C2   Does not affect compile; affects exec, dfa_exec
+# C3   Affects compile, exec, dfa_exec
+# C4   Affects compile, exec, dfa_exec, study
+# C5   Affects compile, exec, study
 
+# Options that can be set for pcre_exec() and/or pcre_dfa_exec() are flagged with
+# E and D, respectively. They take precedence over C3, C4, and C5 settings passed
+# from pcre_compile(). Those that are compatible with JIT execution are flagged
+# with J.
 
-# Specific error codes for UTF-8 validity checks 
-
-PCRE_UTF8_ERR0 =               0
-PCRE_UTF8_ERR1 =               1
-PCRE_UTF8_ERR2 =               2
-PCRE_UTF8_ERR3 =               3
-PCRE_UTF8_ERR4 =               4
-PCRE_UTF8_ERR5 =               5
-PCRE_UTF8_ERR6 =               6
-PCRE_UTF8_ERR7 =               7
-PCRE_UTF8_ERR8 =               8
-PCRE_UTF8_ERR9 =               9
-PCRE_UTF8_ERR10 =             10
-PCRE_UTF8_ERR11 =             11
-PCRE_UTF8_ERR12 =             12
-PCRE_UTF8_ERR13 =             13
-PCRE_UTF8_ERR14 =             14
-PCRE_UTF8_ERR15 =             15
-PCRE_UTF8_ERR16 =             16
-PCRE_UTF8_ERR17 =             17
-PCRE_UTF8_ERR18 =             18
-PCRE_UTF8_ERR19 =             19
-PCRE_UTF8_ERR20 =             20
-PCRE_UTF8_ERR21 =             21
-
-# Specific error codes for UTF-16 validity checks 
-
-PCRE_UTF16_ERR0 =              0
-PCRE_UTF16_ERR1 =              1
-PCRE_UTF16_ERR2 =              2
-PCRE_UTF16_ERR3 =              3
-PCRE_UTF16_ERR4 =              4
-
-# Request types for pcre_fullinfo() 
-
-PCRE_INFO_OPTIONS =            0
-PCRE_INFO_SIZE =               1
-PCRE_INFO_CAPTURECOUNT =       2
-PCRE_INFO_BACKREFMAX =         3
-PCRE_INFO_FIRSTBYTE =          4
-PCRE_INFO_FIRSTCHAR =          4  # For backwards compatibility 
-PCRE_INFO_FIRSTTABLE =         5
-PCRE_INFO_LASTLITERAL =        6
-PCRE_INFO_NAMEENTRYSIZE =      7
-PCRE_INFO_NAMECOUNT =          8
-PCRE_INFO_NAMETABLE =          9
-PCRE_INFO_STUDYSIZE =         10
-PCRE_INFO_DEFAULT_TABLES =    11
-PCRE_INFO_OKPARTIAL =         12
-PCRE_INFO_JCHANGED =          13
-PCRE_INFO_HASCRORLF =         14
-PCRE_INFO_MINLENGTH =         15
-PCRE_INFO_JIT =               16
-PCRE_INFO_JITSIZE =           17
-
-# Request types for pcre_config(). Do not re-arrange, in order to remain compatible.
-
-PCRE_CONFIG_UTF8 =                    0
-PCRE_CONFIG_NEWLINE =                 1
-PCRE_CONFIG_LINK_SIZE =               2
-PCRE_CONFIG_POSIX_MALLOC_THRESHOLD =  3
-PCRE_CONFIG_MATCH_LIMIT =             4
-PCRE_CONFIG_STACKRECURSE =            5
-PCRE_CONFIG_UNICODE_PROPERTIES =      6
-PCRE_CONFIG_MATCH_LIMIT_RECURSION =   7
-PCRE_CONFIG_BSR =                     8
-PCRE_CONFIG_JIT =                     9
-PCRE_CONFIG_UTF16 =                  10
-PCRE_CONFIG_JITTARGET =              11
-
-# Request types for pcre_study(). Do not re-arrange, in order to remain compatible.
-
-PCRE_STUDY_JIT_COMPILE =              0x0001
-PCRE_STUDY_JIT_PARTIAL_SOFT_COMPILE = 0x0002
-PCRE_STUDY_JIT_PARTIAL_HARD_COMPILE = 0x0004
-
-# Bit flags for the pcre_extra structure. Do not re-arrange or redefine
-# these bits, just add new ones on the end, in order to remain compatible.
-
-PCRE_EXTRA_STUDY_DATA =             0x0001
-PCRE_EXTRA_MATCH_LIMIT =            0x0002
-PCRE_EXTRA_CALLOUT_DATA =           0x0004
-PCRE_EXTRA_TABLES =                 0x0008
-PCRE_EXTRA_MATCH_LIMIT_RECURSION =  0x0010
-PCRE_EXTRA_MARK =                   0x0020
-PCRE_EXTRA_EXECUTABLE_JIT =         0x0040
+### copied from _globals.py (generated by generate_globals.py)
+PCRE_CASELESS = cpcre._PCRE_CASELESS                           #  C1       
+PCRE_MULTILINE = cpcre._PCRE_MULTILINE                         #  C1       
+PCRE_DOTALL = cpcre._PCRE_DOTALL                               #  C1       
+PCRE_EXTENDED = cpcre._PCRE_EXTENDED                           #  C1       
+PCRE_ANCHORED = cpcre._PCRE_ANCHORED                           #  C4 E D   
+PCRE_DOLLAR_ENDONLY = cpcre._PCRE_DOLLAR_ENDONLY               #  C2       
+PCRE_EXTRA = cpcre._PCRE_EXTRA                                 #  C1       
+PCRE_NOTBOL = cpcre._PCRE_NOTBOL                               #     E D J 
+PCRE_NOTEOL = cpcre._PCRE_NOTEOL                               #     E D J 
+PCRE_UNGREEDY = cpcre._PCRE_UNGREEDY                           #  C1       
+PCRE_NOTEMPTY = cpcre._PCRE_NOTEMPTY                           #     E D J 
+PCRE_UTF8 = cpcre._PCRE_UTF8                                   #  C4        )          
+PCRE_UTF16 = cpcre._PCRE_UTF16                                 #  C4        ) Synonyms 
+PCRE_UTF32 = cpcre._PCRE_UTF32                                 #  C4        )          
+PCRE_NO_AUTO_CAPTURE = cpcre._PCRE_NO_AUTO_CAPTURE             #  C1       
+PCRE_NO_UTF8_CHECK = cpcre._PCRE_NO_UTF8_CHECK                 #  C1 E D J  )          
+PCRE_NO_UTF16_CHECK = cpcre._PCRE_NO_UTF16_CHECK               #  C1 E D J  ) Synonyms 
+PCRE_NO_UTF32_CHECK = cpcre._PCRE_NO_UTF32_CHECK               #  C1 E D J  )          
+PCRE_AUTO_CALLOUT = cpcre._PCRE_AUTO_CALLOUT                   #  C1       
+PCRE_PARTIAL_SOFT = cpcre._PCRE_PARTIAL_SOFT                   #     E D J  ) Synonyms 
+PCRE_PARTIAL = cpcre._PCRE_PARTIAL                             #     E D J  )          
+PCRE_DFA_SHORTEST = cpcre._PCRE_DFA_SHORTEST                   #       D   
+PCRE_DFA_RESTART = cpcre._PCRE_DFA_RESTART                     #       D   
+PCRE_FIRSTLINE = cpcre._PCRE_FIRSTLINE                         #  C3       
+PCRE_DUPNAMES = cpcre._PCRE_DUPNAMES                           #  C1       
+PCRE_NEWLINE_CR = cpcre._PCRE_NEWLINE_CR                       #  C3 E D   
+PCRE_NEWLINE_LF = cpcre._PCRE_NEWLINE_LF                       #  C3 E D   
+PCRE_NEWLINE_CRLF = cpcre._PCRE_NEWLINE_CRLF                   #  C3 E D   
+PCRE_NEWLINE_ANY = cpcre._PCRE_NEWLINE_ANY                     #  C3 E D   
+PCRE_NEWLINE_ANYCRLF = cpcre._PCRE_NEWLINE_ANYCRLF             #  C3 E D   
+PCRE_BSR_ANYCRLF = cpcre._PCRE_BSR_ANYCRLF                     #  C3 E D   
+PCRE_BSR_UNICODE = cpcre._PCRE_BSR_UNICODE                     #  C3 E D   
+PCRE_JAVASCRIPT_COMPAT = cpcre._PCRE_JAVASCRIPT_COMPAT         #  C5       
+PCRE_NO_START_OPTIMIZE = cpcre._PCRE_NO_START_OPTIMIZE         #  C2 E D    ) Synonyms 
+PCRE_NO_START_OPTIMISE = cpcre._PCRE_NO_START_OPTIMISE         #  C2 E D    )          
+PCRE_PARTIAL_HARD = cpcre._PCRE_PARTIAL_HARD                   #     E D J 
+PCRE_NOTEMPTY_ATSTART = cpcre._PCRE_NOTEMPTY_ATSTART           #     E D J 
+PCRE_UCP = cpcre._PCRE_UCP                                     #  C3       
+PCRE_ERROR_NOMATCH = cpcre._PCRE_ERROR_NOMATCH
+PCRE_ERROR_NULL = cpcre._PCRE_ERROR_NULL
+PCRE_ERROR_BADOPTION = cpcre._PCRE_ERROR_BADOPTION
+PCRE_ERROR_BADMAGIC = cpcre._PCRE_ERROR_BADMAGIC
+PCRE_ERROR_UNKNOWN_OPCODE = cpcre._PCRE_ERROR_UNKNOWN_OPCODE
+PCRE_ERROR_UNKNOWN_NODE = cpcre._PCRE_ERROR_UNKNOWN_NODE       #  For backward compatibility 
+PCRE_ERROR_NOMEMORY = cpcre._PCRE_ERROR_NOMEMORY
+PCRE_ERROR_NOSUBSTRING = cpcre._PCRE_ERROR_NOSUBSTRING
+PCRE_ERROR_MATCHLIMIT = cpcre._PCRE_ERROR_MATCHLIMIT
+PCRE_ERROR_CALLOUT = cpcre._PCRE_ERROR_CALLOUT                 #  Never used by PCRE itself 
+PCRE_ERROR_BADUTF8 = cpcre._PCRE_ERROR_BADUTF8                 #  Same for 8/16/32 
+PCRE_ERROR_BADUTF16 = cpcre._PCRE_ERROR_BADUTF16               #  Same for 8/16/32 
+PCRE_ERROR_BADUTF32 = cpcre._PCRE_ERROR_BADUTF32               #  Same for 8/16/32 
+PCRE_ERROR_BADUTF8_OFFSET = cpcre._PCRE_ERROR_BADUTF8_OFFSET   #  Same for 8/16 
+PCRE_ERROR_BADUTF16_OFFSET = cpcre._PCRE_ERROR_BADUTF16_OFFSET #  Same for 8/16 
+PCRE_ERROR_PARTIAL = cpcre._PCRE_ERROR_PARTIAL
+PCRE_ERROR_BADPARTIAL = cpcre._PCRE_ERROR_BADPARTIAL
+PCRE_ERROR_INTERNAL = cpcre._PCRE_ERROR_INTERNAL
+PCRE_ERROR_BADCOUNT = cpcre._PCRE_ERROR_BADCOUNT
+PCRE_ERROR_DFA_UITEM = cpcre._PCRE_ERROR_DFA_UITEM
+PCRE_ERROR_DFA_UCOND = cpcre._PCRE_ERROR_DFA_UCOND
+PCRE_ERROR_DFA_UMLIMIT = cpcre._PCRE_ERROR_DFA_UMLIMIT
+PCRE_ERROR_DFA_WSSIZE = cpcre._PCRE_ERROR_DFA_WSSIZE
+PCRE_ERROR_DFA_RECURSE = cpcre._PCRE_ERROR_DFA_RECURSE
+PCRE_ERROR_RECURSIONLIMIT = cpcre._PCRE_ERROR_RECURSIONLIMIT
+PCRE_ERROR_NULLWSLIMIT = cpcre._PCRE_ERROR_NULLWSLIMIT         #  No longer actually used 
+PCRE_ERROR_BADNEWLINE = cpcre._PCRE_ERROR_BADNEWLINE
+PCRE_ERROR_BADOFFSET = cpcre._PCRE_ERROR_BADOFFSET
+PCRE_ERROR_SHORTUTF8 = cpcre._PCRE_ERROR_SHORTUTF8
+PCRE_ERROR_SHORTUTF16 = cpcre._PCRE_ERROR_SHORTUTF16           #  Same for 8/16 
+PCRE_ERROR_RECURSELOOP = cpcre._PCRE_ERROR_RECURSELOOP
+PCRE_ERROR_JIT_STACKLIMIT = cpcre._PCRE_ERROR_JIT_STACKLIMIT
+PCRE_ERROR_BADMODE = cpcre._PCRE_ERROR_BADMODE
+PCRE_ERROR_BADENDIANNESS = cpcre._PCRE_ERROR_BADENDIANNESS
+PCRE_ERROR_DFA_BADRESTART = cpcre._PCRE_ERROR_DFA_BADRESTART
+PCRE_ERROR_JIT_BADOPTION = cpcre._PCRE_ERROR_JIT_BADOPTION
+PCRE_ERROR_BADLENGTH = cpcre._PCRE_ERROR_BADLENGTH
+PCRE_UTF8_ERR0 = cpcre._PCRE_UTF8_ERR0
+PCRE_UTF8_ERR1 = cpcre._PCRE_UTF8_ERR1
+PCRE_UTF8_ERR2 = cpcre._PCRE_UTF8_ERR2
+PCRE_UTF8_ERR3 = cpcre._PCRE_UTF8_ERR3
+PCRE_UTF8_ERR4 = cpcre._PCRE_UTF8_ERR4
+PCRE_UTF8_ERR5 = cpcre._PCRE_UTF8_ERR5
+PCRE_UTF8_ERR6 = cpcre._PCRE_UTF8_ERR6
+PCRE_UTF8_ERR7 = cpcre._PCRE_UTF8_ERR7
+PCRE_UTF8_ERR8 = cpcre._PCRE_UTF8_ERR8
+PCRE_UTF8_ERR9 = cpcre._PCRE_UTF8_ERR9
+PCRE_UTF8_ERR10 = cpcre._PCRE_UTF8_ERR10
+PCRE_UTF8_ERR11 = cpcre._PCRE_UTF8_ERR11
+PCRE_UTF8_ERR12 = cpcre._PCRE_UTF8_ERR12
+PCRE_UTF8_ERR13 = cpcre._PCRE_UTF8_ERR13
+PCRE_UTF8_ERR14 = cpcre._PCRE_UTF8_ERR14
+PCRE_UTF8_ERR15 = cpcre._PCRE_UTF8_ERR15
+PCRE_UTF8_ERR16 = cpcre._PCRE_UTF8_ERR16
+PCRE_UTF8_ERR17 = cpcre._PCRE_UTF8_ERR17
+PCRE_UTF8_ERR18 = cpcre._PCRE_UTF8_ERR18
+PCRE_UTF8_ERR19 = cpcre._PCRE_UTF8_ERR19
+PCRE_UTF8_ERR20 = cpcre._PCRE_UTF8_ERR20
+PCRE_UTF8_ERR21 = cpcre._PCRE_UTF8_ERR21
+PCRE_UTF8_ERR22 = cpcre._PCRE_UTF8_ERR22
+PCRE_UTF16_ERR0 = cpcre._PCRE_UTF16_ERR0
+PCRE_UTF16_ERR1 = cpcre._PCRE_UTF16_ERR1
+PCRE_UTF16_ERR2 = cpcre._PCRE_UTF16_ERR2
+PCRE_UTF16_ERR3 = cpcre._PCRE_UTF16_ERR3
+PCRE_UTF16_ERR4 = cpcre._PCRE_UTF16_ERR4
+PCRE_UTF32_ERR0 = cpcre._PCRE_UTF32_ERR0
+PCRE_UTF32_ERR1 = cpcre._PCRE_UTF32_ERR1
+PCRE_UTF32_ERR2 = cpcre._PCRE_UTF32_ERR2
+PCRE_UTF32_ERR3 = cpcre._PCRE_UTF32_ERR3
+PCRE_INFO_OPTIONS = cpcre._PCRE_INFO_OPTIONS
+PCRE_INFO_SIZE = cpcre._PCRE_INFO_SIZE
+PCRE_INFO_CAPTURECOUNT = cpcre._PCRE_INFO_CAPTURECOUNT
+PCRE_INFO_BACKREFMAX = cpcre._PCRE_INFO_BACKREFMAX
+PCRE_INFO_FIRSTBYTE = cpcre._PCRE_INFO_FIRSTBYTE
+PCRE_INFO_FIRSTCHAR = cpcre._PCRE_INFO_FIRSTCHAR               #  For backwards compatibility 
+PCRE_INFO_FIRSTTABLE = cpcre._PCRE_INFO_FIRSTTABLE
+PCRE_INFO_LASTLITERAL = cpcre._PCRE_INFO_LASTLITERAL
+PCRE_INFO_NAMEENTRYSIZE = cpcre._PCRE_INFO_NAMEENTRYSIZE
+PCRE_INFO_NAMECOUNT = cpcre._PCRE_INFO_NAMECOUNT
+PCRE_INFO_NAMETABLE = cpcre._PCRE_INFO_NAMETABLE
+PCRE_INFO_STUDYSIZE = cpcre._PCRE_INFO_STUDYSIZE
+PCRE_INFO_DEFAULT_TABLES = cpcre._PCRE_INFO_DEFAULT_TABLES
+PCRE_INFO_OKPARTIAL = cpcre._PCRE_INFO_OKPARTIAL
+PCRE_INFO_JCHANGED = cpcre._PCRE_INFO_JCHANGED
+PCRE_INFO_HASCRORLF = cpcre._PCRE_INFO_HASCRORLF
+PCRE_INFO_MINLENGTH = cpcre._PCRE_INFO_MINLENGTH
+PCRE_INFO_JIT = cpcre._PCRE_INFO_JIT
+PCRE_INFO_JITSIZE = cpcre._PCRE_INFO_JITSIZE
+PCRE_INFO_MAXLOOKBEHIND = cpcre._PCRE_INFO_MAXLOOKBEHIND
+PCRE_INFO_FIRSTCHARACTER = cpcre._PCRE_INFO_FIRSTCHARACTER
+PCRE_INFO_FIRSTCHARACTERFLAGS = cpcre._PCRE_INFO_FIRSTCHARACTERFLAGS
+PCRE_INFO_REQUIREDCHAR = cpcre._PCRE_INFO_REQUIREDCHAR
+PCRE_INFO_REQUIREDCHARFLAGS = cpcre._PCRE_INFO_REQUIREDCHARFLAGS
+PCRE_CONFIG_UTF8 = cpcre._PCRE_CONFIG_UTF8
+PCRE_CONFIG_NEWLINE = cpcre._PCRE_CONFIG_NEWLINE
+PCRE_CONFIG_LINK_SIZE = cpcre._PCRE_CONFIG_LINK_SIZE
+PCRE_CONFIG_POSIX_MALLOC_THRESHOLD = cpcre._PCRE_CONFIG_POSIX_MALLOC_THRESHOLD
+PCRE_CONFIG_MATCH_LIMIT = cpcre._PCRE_CONFIG_MATCH_LIMIT
+PCRE_CONFIG_STACKRECURSE = cpcre._PCRE_CONFIG_STACKRECURSE
+PCRE_CONFIG_UNICODE_PROPERTIES = cpcre._PCRE_CONFIG_UNICODE_PROPERTIES
+PCRE_CONFIG_MATCH_LIMIT_RECURSION = cpcre._PCRE_CONFIG_MATCH_LIMIT_RECURSION
+PCRE_CONFIG_BSR = cpcre._PCRE_CONFIG_BSR
+PCRE_CONFIG_JIT = cpcre._PCRE_CONFIG_JIT
+PCRE_CONFIG_UTF16 = cpcre._PCRE_CONFIG_UTF16
+PCRE_CONFIG_JITTARGET = cpcre._PCRE_CONFIG_JITTARGET
+PCRE_CONFIG_UTF32 = cpcre._PCRE_CONFIG_UTF32
+PCRE_STUDY_JIT_COMPILE = cpcre._PCRE_STUDY_JIT_COMPILE
+PCRE_STUDY_JIT_PARTIAL_SOFT_COMPILE = cpcre._PCRE_STUDY_JIT_PARTIAL_SOFT_COMPILE
+PCRE_STUDY_JIT_PARTIAL_HARD_COMPILE = cpcre._PCRE_STUDY_JIT_PARTIAL_HARD_COMPILE
+PCRE_STUDY_EXTRA_NEEDED = cpcre._PCRE_STUDY_EXTRA_NEEDED
+PCRE_EXTRA_STUDY_DATA = cpcre._PCRE_EXTRA_STUDY_DATA
+PCRE_EXTRA_MATCH_LIMIT = cpcre._PCRE_EXTRA_MATCH_LIMIT
+PCRE_EXTRA_CALLOUT_DATA = cpcre._PCRE_EXTRA_CALLOUT_DATA
+PCRE_EXTRA_TABLES = cpcre._PCRE_EXTRA_TABLES
+PCRE_EXTRA_MATCH_LIMIT_RECURSION = cpcre._PCRE_EXTRA_MATCH_LIMIT_RECURSION
+PCRE_EXTRA_MARK = cpcre._PCRE_EXTRA_MARK
+PCRE_EXTRA_EXECUTABLE_JIT = cpcre._PCRE_EXTRA_EXECUTABLE_JIT
 
 # compute some bit masks to avoid errors when supplying wrong options to some functions
-PCRE_COMPILE_OPTIONS_MASK =\
-        PCRE_CASELESS |\
-        PCRE_MULTILINE |\
-        PCRE_DOTALL |\
-        PCRE_EXTENDED |\
-        PCRE_ANCHORED |\
-        PCRE_DOLLAR_ENDONLY |\
-        PCRE_EXTRA |\
-        PCRE_UNGREEDY |\
-        PCRE_UTF8 |\
-        PCRE_NO_AUTO_CAPTURE |\
-        PCRE_NO_UTF8_CHECK |\
-        PCRE_AUTO_CALLOUT |\
-        PCRE_FIRSTLINE |\
-        PCRE_DUPNAMES |\
-        PCRE_NEWLINE_CR |\
-        PCRE_NEWLINE_LF |\
-        PCRE_NEWLINE_CRLF |\
-        PCRE_NEWLINE_ANY |\
-        PCRE_NEWLINE_ANYCRLF |\
-        PCRE_BSR_ANYCRLF |\
-        PCRE_BSR_UNICODE |\
-        PCRE_JAVASCRIPT_COMPAT |\
-        PCRE_NO_START_OPTIMIZE |\
-        PCRE_UCP
+cdef unsigned int PCRE_COMPILE_OPTIONS_MASK =\
+        cpcre._PCRE_CASELESS |\
+        cpcre._PCRE_MULTILINE |\
+        cpcre._PCRE_DOTALL |\
+        cpcre._PCRE_EXTENDED |\
+        cpcre._PCRE_ANCHORED |\
+        cpcre._PCRE_DOLLAR_ENDONLY |\
+        cpcre._PCRE_EXTRA |\
+        cpcre._PCRE_UNGREEDY |\
+        cpcre._PCRE_UTF8 |\
+        cpcre._PCRE_NO_AUTO_CAPTURE |\
+        cpcre._PCRE_NO_UTF8_CHECK |\
+        cpcre._PCRE_AUTO_CALLOUT |\
+        cpcre._PCRE_FIRSTLINE |\
+        cpcre._PCRE_DUPNAMES |\
+        cpcre._PCRE_NEWLINE_CR |\
+        cpcre._PCRE_NEWLINE_LF |\
+        cpcre._PCRE_NEWLINE_CRLF |\
+        cpcre._PCRE_NEWLINE_ANY |\
+        cpcre._PCRE_NEWLINE_ANYCRLF |\
+        cpcre._PCRE_BSR_ANYCRLF |\
+        cpcre._PCRE_BSR_UNICODE |\
+        cpcre._PCRE_JAVASCRIPT_COMPAT |\
+        cpcre._PCRE_NO_START_OPTIMIZE |\
+        cpcre._PCRE_UCP
 
-PCRE_EXEC_OPTIONS_MASK =\
-        PCRE_ANCHORED |\
-        PCRE_NOTBOL |\
-        PCRE_NOTEOL |\
-        PCRE_NOTEMPTY |\
-        PCRE_NO_UTF8_CHECK |\
-        PCRE_PARTIAL_SOFT |\
-        PCRE_NEWLINE_CR |\
-        PCRE_NEWLINE_LF |\
-        PCRE_NEWLINE_CRLF |\
-        PCRE_NEWLINE_ANY |\
-        PCRE_NEWLINE_ANYCRLF |\
-        PCRE_BSR_ANYCRLF |\
-        PCRE_BSR_UNICODE |\
-        PCRE_NO_START_OPTIMIZE |\
-        PCRE_PARTIAL_HARD |\
-        PCRE_NOTEMPTY_ATSTART
+cdef unsigned int PCRE_EXEC_OPTIONS_MASK =\
+        cpcre._PCRE_ANCHORED |\
+        cpcre._PCRE_NOTBOL |\
+        cpcre._PCRE_NOTEOL |\
+        cpcre._PCRE_NOTEMPTY |\
+        cpcre._PCRE_NO_UTF8_CHECK |\
+        cpcre._PCRE_PARTIAL_SOFT |\
+        cpcre._PCRE_NEWLINE_CR |\
+        cpcre._PCRE_NEWLINE_LF |\
+        cpcre._PCRE_NEWLINE_CRLF |\
+        cpcre._PCRE_NEWLINE_ANY |\
+        cpcre._PCRE_NEWLINE_ANYCRLF |\
+        cpcre._PCRE_BSR_ANYCRLF |\
+        cpcre._PCRE_BSR_UNICODE |\
+        cpcre._PCRE_NO_START_OPTIMIZE |\
+        cpcre._PCRE_PARTIAL_HARD |\
+        cpcre._PCRE_NOTEMPTY_ATSTART
 
-PCRE_STUDY_OPTIONS_MASK =\
-        PCRE_STUDY_JIT_COMPILE |\
-        PCRE_STUDY_JIT_PARTIAL_SOFT_COMPILE |\
-        PCRE_STUDY_JIT_PARTIAL_HARD_COMPILE
+cdef unsigned int PCRE_STUDY_OPTIONS_MASK =\
+        cpcre._PCRE_STUDY_JIT_COMPILE |\
+        cpcre._PCRE_STUDY_JIT_PARTIAL_SOFT_COMPILE |\
+        cpcre._PCRE_STUDY_JIT_PARTIAL_HARD_COMPILE
 
 class PcreException(Exception):
     pass
@@ -320,26 +329,26 @@ cdef inline unicode tounicode_with_length(char* s, size_t length):
     return s[:length].decode('UTF-8', 'strict')
 
 ERROR_CODES = {
-    PCRE_ERROR_MATCHLIMIT: 'maximum match limit exceeded',
-    PCRE_ERROR_RECURSIONLIMIT: 'maximum recursion limit exceeded',
-    PCRE_ERROR_NULL: 'NULL parameter',
-    PCRE_ERROR_BADOPTION: 'unrecognized option (flag)',
-    PCRE_ERROR_BADMAGIC: 'magic number not present',
-    PCRE_ERROR_UNKNOWN_OPCODE: 'unknown opcode',
-    PCRE_ERROR_NOMEMORY: 'out of memory',
-    PCRE_ERROR_BADUTF8: 'invalid UTF-8 byte sequence',
-    PCRE_ERROR_BADUTF8_OFFSET: 'invalid UTF-8 offset',
-    PCRE_ERROR_INTERNAL: 'unexpected internal error',
-    PCRE_ERROR_BADCOUNT: 'invalid value for ovecsize',
-    PCRE_ERROR_BADNEWLINE: 'invalid combination of PCRE_NEWLINE_xxx options',
-    PCRE_ERROR_BADOFFSET: 'invalid offset',
-    PCRE_ERROR_SHORTUTF8: 'short UTF-8 byte sequence',
-    PCRE_ERROR_RECURSELOOP: 'recursion loop within the pattern',
-    PCRE_ERROR_JIT_STACKLIMIT: 'out of JIT memory',
-    PCRE_ERROR_BADMODE: 'a pattern that was compiled by the 8-bit library is passed to a 16-bit or 32-bit library function, or vice versa',
-    PCRE_ERROR_BADENDIANNESS: 'a pattern that was compiled and saved is reloaded on a host with different endianness',
-    PCRE_ERROR_JIT_BADOPTION: 'invalid option in JIT mode',
-    PCRE_ERROR_BADLENGTH: 'pcre_exec() was called with a negative value for the length argument',
+    cpcre._PCRE_ERROR_MATCHLIMIT: 'maximum match limit exceeded',
+    cpcre._PCRE_ERROR_RECURSIONLIMIT: 'maximum recursion limit exceeded',
+    cpcre._PCRE_ERROR_NULL: 'NULL parameter',
+    cpcre._PCRE_ERROR_BADOPTION: 'unrecognized option (flag)',
+    cpcre._PCRE_ERROR_BADMAGIC: 'magic number not present',
+    cpcre._PCRE_ERROR_UNKNOWN_OPCODE: 'unknown opcode',
+    cpcre._PCRE_ERROR_NOMEMORY: 'out of memory',
+    cpcre._PCRE_ERROR_BADUTF8: 'invalid UTF-8 byte sequence',
+    cpcre._PCRE_ERROR_BADUTF8_OFFSET: 'invalid UTF-8 offset',
+    cpcre._PCRE_ERROR_INTERNAL: 'unexpected internal error',
+    cpcre._PCRE_ERROR_BADCOUNT: 'invalid value for ovecsize',
+    cpcre._PCRE_ERROR_BADNEWLINE: 'invalid combination of PCRE_NEWLINE_xxx options',
+    cpcre._PCRE_ERROR_BADOFFSET: 'invalid offset',
+    cpcre._PCRE_ERROR_SHORTUTF8: 'short UTF-8 byte sequence',
+    cpcre._PCRE_ERROR_RECURSELOOP: 'recursion loop within the pattern',
+    cpcre._PCRE_ERROR_JIT_STACKLIMIT: 'out of JIT memory',
+    cpcre._PCRE_ERROR_BADMODE: 'a pattern that was compiled by the 8-bit library is passed to a 16-bit or 32-bit library function, or vice versa',
+    cpcre._PCRE_ERROR_BADENDIANNESS: 'a pattern that was compiled and saved is reloaded on a host with different endianness',
+    cpcre._PCRE_ERROR_JIT_BADOPTION: 'invalid option in JIT mode',
+    cpcre._PCRE_ERROR_BADLENGTH: 'pcre_exec() was called with a negative value for the length argument',
 }
 
 @cython.profile(False)
@@ -358,7 +367,7 @@ cpdef pcre_compile(pattern, int options=0):
         Pcre pcre = Pcre.__new__(Pcre)
 
     if isinstance(pattern, unicode):
-        options |= PCRE_UTF8 | PCRE_UCP
+        options |= cpcre._PCRE_UTF8 | cpcre._PCRE_UCP
     pattern = process_text(pattern)
     re = cpcre.pcre_compile(pattern, options & PCRE_COMPILE_OPTIONS_MASK, &error, &erroffset, NULL)
     if re is NULL:
@@ -366,7 +375,7 @@ cpdef pcre_compile(pattern, int options=0):
     pcre._c_pcre = re
     return pcre
 
-cpdef pcre_study(Pcre re, int options=0):
+cpdef inline PcreExtra pcre_study(Pcre re, int options=0):
     cdef:
         cpcre.pcre_extra *sd
         PcreExtra pcre_extra = PcreExtra.__new__(PcreExtra)
@@ -378,7 +387,7 @@ cpdef pcre_study(Pcre re, int options=0):
     pcre_extra._c_pcre_extra = sd
     return pcre_extra
 
-cpdef pcre_create_empty_study():
+cpdef PcreExtra pcre_create_empty_study():
     cdef:
         PcreExtra pcre_extra = PcreExtra.__new__(PcreExtra)
     pcre_extra._c_pcre_extra = <cpcre.pcre_extra *>malloc(sizeof(cpcre.pcre_extra))
@@ -386,16 +395,16 @@ cpdef pcre_create_empty_study():
     return pcre_extra
 
 cdef pcre_fullinfo_wrapper(cpcre.pcre* code, cpcre.pcre_extra* extra, int what, void* where):
-    res = cpcre.pcre_fullinfo(code, extra, what, where)
+    cdef int res = cpcre.pcre_fullinfo(code, extra, what, where)
     if res != 0:
         s = 'pcre_fullinfo() failed: %s'
-        if res == PCRE_ERROR_NULL:
+        if res == cpcre._PCRE_ERROR_NULL:
             raise PcreException(s % 'NULL pointer')
-        elif res == PCRE_ERROR_BADMAGIC:
+        elif res == cpcre._PCRE_ERROR_BADMAGIC:
             raise PcreException(s % 'magic number not found in pattern')
-        elif res == PCRE_ERROR_BADENDIANNESS:
+        elif res == cpcre._PCRE_ERROR_BADENDIANNESS:
             raise PcreException(s % 'the pattern was compiled with different endianness')
-        elif res == PCRE_ERROR_BADOPTION:
+        elif res == cpcre._PCRE_ERROR_BADOPTION:
             raise PcreException(s % 'invalid option number')
         else:
             raise PcreException(s % 'unknown')
@@ -412,14 +421,14 @@ cpdef pcre_info(Pcre re, PcreExtra extra=None):
     re.info_available = 1
 
     # number of captures
-    pcre_fullinfo_wrapper(re._c_pcre, extra._c_pcre_extra, PCRE_INFO_CAPTURECOUNT, &capture_count)
+    pcre_fullinfo_wrapper(re._c_pcre, extra._c_pcre_extra, cpcre._PCRE_INFO_CAPTURECOUNT, &capture_count)
     re.groups = capture_count
     
     # named substrings
-    pcre_fullinfo_wrapper(re._c_pcre, extra._c_pcre_extra, PCRE_INFO_NAMECOUNT, &namecount)
+    pcre_fullinfo_wrapper(re._c_pcre, extra._c_pcre_extra, cpcre._PCRE_INFO_NAMECOUNT, &namecount)
     if namecount > 0:
-        pcre_fullinfo_wrapper(re._c_pcre, extra._c_pcre_extra, PCRE_INFO_NAMETABLE, &name_table)
-        pcre_fullinfo_wrapper(re._c_pcre, extra._c_pcre_extra, PCRE_INFO_NAMEENTRYSIZE, &name_entry_size)
+        pcre_fullinfo_wrapper(re._c_pcre, extra._c_pcre_extra, cpcre._PCRE_INFO_NAMETABLE, &name_table)
+        pcre_fullinfo_wrapper(re._c_pcre, extra._c_pcre_extra, cpcre._PCRE_INFO_NAMEENTRYSIZE, &name_entry_size)
         tabptr = name_table
         for i in range(namecount):
             n = (tabptr[0] << 8) | tabptr[1]
@@ -446,7 +455,7 @@ cpdef ExecResult pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None
         extra = PcreExtra.__new__(PcreExtra)
 
     # mark handling
-    if extra._c_pcre_extra is not NULL and extra._c_pcre_extra.flags & PCRE_EXTRA_MARK:
+    if extra._c_pcre_extra is not NULL and extra._c_pcre_extra.flags & cpcre._PCRE_EXTRA_MARK:
         extra._c_pcre_extra.mark = &exec_result.markptr
 
     # get the pcre info if we don't have it already
@@ -548,11 +557,11 @@ cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int o
     subject = process_text(subject)
     exec_results = []
     cdef:
-        ExecResult exec_result = ExecResult()
+        ExecResult exec_result
         unsigned int option_bits
         int utf8
         int d
-        int crlf_is_newline
+        bint crlf_is_newline
         char* c_subject = subject
         int subject_length = len(c_subject)
         int start_offset
@@ -562,22 +571,22 @@ cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int o
     # sequence. First, find the options with which the regex was compiled; extract
     # the UTF-8 state, and mask off all but the newline options.
 
-    pcre_fullinfo_wrapper(re._c_pcre, NULL, PCRE_INFO_OPTIONS, &option_bits);
-    utf8 = option_bits & PCRE_UTF8
-    option_bits &= PCRE_NEWLINE_CR|PCRE_NEWLINE_LF | PCRE_NEWLINE_CRLF | PCRE_NEWLINE_ANY | PCRE_NEWLINE_ANYCRLF
+    pcre_fullinfo_wrapper(re._c_pcre, NULL, cpcre._PCRE_INFO_OPTIONS, &option_bits);
+    utf8 = option_bits & cpcre._PCRE_UTF8
+    option_bits &= cpcre._PCRE_NEWLINE_CR|cpcre._PCRE_NEWLINE_LF | cpcre._PCRE_NEWLINE_CRLF | cpcre._PCRE_NEWLINE_ANY | cpcre._PCRE_NEWLINE_ANYCRLF
 
     # If no newline options were set, find the default newline convention from the
     # build configuration.
     if option_bits == 0:
-        cpcre.pcre_config(PCRE_CONFIG_NEWLINE, &d)
+        cpcre.pcre_config(cpcre._PCRE_CONFIG_NEWLINE, &d)
         #print 'd = %d' % d
         # Note that these values are always the ASCII ones, even in
         # EBCDIC environments. CR = 13, NL = 10.
-        option_bits = PCRE_NEWLINE_CR if d == 13 else (
-            PCRE_NEWLINE_LF if d == 10 else (
-                PCRE_NEWLINE_CRLF if d == (13<<8 | 10) else (
-                    PCRE_NEWLINE_ANYCRLF if d == -2 else (
-                        PCRE_NEWLINE_ANY if d == -1 else 0
+        option_bits = cpcre._PCRE_NEWLINE_CR if d == 13 else (
+            cpcre._PCRE_NEWLINE_LF if d == 10 else (
+                cpcre._PCRE_NEWLINE_CRLF if d == (13<<8 | 10) else (
+                    cpcre._PCRE_NEWLINE_ANYCRLF if d == -2 else (
+                        cpcre._PCRE_NEWLINE_ANY if d == -1 else 0
                     )
                 )
             )
@@ -585,7 +594,7 @@ cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int o
     #print 'utf8 = %d, option_bits = 0x%X' % (utf8, option_bits)
 
     # See if CRLF is a valid newline sequence.
-    crlf_is_newline = option_bits == PCRE_NEWLINE_ANY or option_bits == PCRE_NEWLINE_CRLF or option_bits == PCRE_NEWLINE_ANYCRLF
+    crlf_is_newline = option_bits == cpcre._PCRE_NEWLINE_ANY or option_bits == cpcre._PCRE_NEWLINE_CRLF or option_bits == cpcre._PCRE_NEWLINE_ANYCRLF
 
     not_empty_options = 0
     end_offset = offset
@@ -610,7 +619,7 @@ cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int o
         # Otherwise we must ensure that we skip an entire UTF-8 character if we are in
         # UTF-8 mode.
         
-        if exec_result.result == PCRE_ERROR_NOMATCH:
+        if exec_result.result == cpcre._PCRE_ERROR_NOMATCH:
             if not_empty_options == 0:
                 break                                   # All matches found
             end_offset = start_offset + 1               # Advance one byte
@@ -642,7 +651,7 @@ cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int o
         if exec_result.ovector[0] == exec_result.ovector[1]:
             if exec_result.ovector[0] == subject_length:
                 break
-            not_empty_options = PCRE_NOTEMPTY_ATSTART | PCRE_ANCHORED
+            not_empty_options = cpcre._PCRE_NOTEMPTY_ATSTART | cpcre._PCRE_ANCHORED
     return exec_results
 
 cpdef pcre_split(Pcre re, string, int maxsplit=0, int options=0, PcreExtra extra=None):
@@ -653,7 +662,7 @@ cpdef pcre_split(Pcre re, string, int maxsplit=0, int options=0, PcreExtra extra
     
     string = process_text(string)
     res = []
-    for result in pcre_find_all(re, string, options | PCRE_NOTEMPTY, extra):
+    for result in pcre_find_all(re, string, options | cpcre._PCRE_NOTEMPTY, extra):
         counter += 1
         res.append(string[last_index:result.start_offsets[0]])
         last_index = result.end_offsets[0]
@@ -799,7 +808,7 @@ cdef class SRE_Match(object):
     cpdef span(self, group=0):
         return (self.start(group), self.end(group))
 
-cdef class Iterator:
+cdef class SRE_Iterator:
     cdef:
         object orig_string
         SRE_Pattern re
@@ -839,7 +848,7 @@ cdef class SRE_Pattern(object):
     def __init__(self, pattern, flags):
         self.pattern = pattern
         self.flags = flags
-        self.used_flags = flags | PCRE_NO_UTF8_CHECK
+        self.used_flags = flags | cpcre._PCRE_NO_UTF8_CHECK
         # don't support some escapes that are invalid in 're' (just \ddd so we don't mess with the back references)
         cdef ExecResult res = pcre_exec(pcre_compile(r'(?:^|[^\\])(\\[89]\d\d)'), pattern)
         if res.num_matches:
@@ -873,12 +882,12 @@ cdef class SRE_Pattern(object):
     cpdef match(self, string, pos=0, endpos=None):
         if not isinstance(string, basestring):
             string = unicode(string)
-        already_anchored = self.used_flags & PCRE_ANCHORED
+        already_anchored = self.used_flags & cpcre._PCRE_ANCHORED
         if not already_anchored:
-            self.used_flags |= PCRE_ANCHORED
+            self.used_flags |= cpcre._PCRE_ANCHORED
         res = self.search(string, pos, endpos)
         if not already_anchored:
-            self.used_flags &= ~PCRE_ANCHORED
+            self.used_flags &= ~cpcre._PCRE_ANCHORED
         return res
     cpdef split(self, string, maxsplit=0):
         if not isinstance(string, basestring):
@@ -912,7 +921,7 @@ cdef class SRE_Pattern(object):
             string = string[:endpos]
         else:
             endpos = len(string)
-        return Iterator(string, orig_string, pos, endpos, self)
+        return SRE_Iterator(string, orig_string, pos, endpos, self)
     cpdef _repl_wrapper(self, result):
         return self._subn_repl(SRE_Match(result, self, self._subn_string))
     cpdef subn(self, repl, string, count=0):
@@ -949,7 +958,7 @@ ESCAPES = {
     r"\\": (LITERAL, ord("\\"))
 }
 
-cdef class Tokenizer:
+cdef class SRE_Tokenizer:
     cdef:
         object string, next
         int index
@@ -1015,7 +1024,7 @@ cdef inline parse_template(source, pattern):
     # group references
 
     cdef:
-        Tokenizer s = Tokenizer(source)
+        SRE_Tokenizer s = SRE_Tokenizer(source)
 
     p = []
     a = p.append
