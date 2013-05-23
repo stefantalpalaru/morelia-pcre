@@ -237,7 +237,11 @@ cdef unsigned int PCRE_STUDY_OPTIONS_MASK =\
         cpcre._PCRE_STUDY_JIT_PARTIAL_SOFT_COMPILE |\
         cpcre._PCRE_STUDY_JIT_PARTIAL_HARD_COMPILE
 
-class PcreException(Exception):
+cdef extern from "pyerrors.h":
+    ctypedef class __builtin__.Exception [object PyBaseExceptionObject]:
+        pass
+
+cdef class PcreException(Exception):
     pass
 
 cdef extern from "Python.h":
@@ -359,7 +363,7 @@ cdef inline process_exec_error(int rc):
 cpdef pcre_version():
     return cpcre.pcre_version()
 
-cpdef pcre_compile(pattern, int options=0):
+cpdef inline Pcre pcre_compile(pattern, int options=0):
     cdef:
         const_char *error
         int erroffset
