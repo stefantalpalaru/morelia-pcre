@@ -839,8 +839,8 @@ cdef class SRE_Pattern(object):
         object _subn_string
     cdef public:
         object pattern
-        object flags
-        object used_flags
+        unsigned int flags
+        unsigned int used_flags
         Pcre pcre_compiled
         PcreExtra pcre_extra
         int groups
