@@ -490,10 +490,6 @@ cpdef ExecResult pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None
             if ovector[i * 2] >= 0:
                 match = match_ptr[:match_len]
                 if subject_is_unicode:
-                    #try:
-                        #match = tounicode_with_length(<char*>match_ptr, match_len)
-                    #except:
-                        #pass
                     match = tounicode_with_length(<char*>match_ptr, match_len)
                     py_match_len = len(match)
                 exec_result.matches.append(match)
@@ -502,12 +498,6 @@ cpdef ExecResult pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None
             start = ovector[i * 2]
             end = ovector[i * 2 + 1]
             if subject_is_unicode and start >= 0:
-                #try:
-                    #str_before = tounicode_with_length(<char*>subject, ovector[i * 2])
-                    #start = len(str_before)
-                    #end = start + len(match)
-                #except:
-                    #pass
                 str_before = tounicode_with_length(<char*>subject, ovector[i * 2])
                 start = len(str_before)
                 end = start + py_match_len
@@ -578,7 +568,6 @@ cpdef list pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, 
     # build configuration.
     if option_bits == 0:
         cpcre.pcre_config(cpcre._PCRE_CONFIG_NEWLINE, &d)
-        #print 'd = %d' % d
         # Note that these values are always the ASCII ones, even in
         # EBCDIC environments. CR = 13, NL = 10.
         option_bits = cpcre._PCRE_NEWLINE_CR if d == 13 else (
@@ -590,7 +579,6 @@ cpdef list pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, 
                 )
             )
         )
-    #print 'utf8 = %d, option_bits = 0x%X' % (utf8, option_bits)
 
     # See if CRLF is a valid newline sequence.
     crlf_is_newline = option_bits == cpcre._PCRE_NEWLINE_ANY or option_bits == cpcre._PCRE_NEWLINE_CRLF or option_bits == cpcre._PCRE_NEWLINE_ANYCRLF
@@ -751,7 +739,7 @@ cdef class SRE_Match(object):
         object endpos
         object lastindex
         object lastgroup
-        object _regs
+        tuple _regs
     def __cinit__(self):
         self._regs = None
     def __init__(self, exec_result, re, string, pos=0, endpos=None):
@@ -851,7 +839,7 @@ cdef class SRE_Pattern(object):
         self.flags = flags
         self.used_flags = flags | cpcre._PCRE_NO_UTF8_CHECK
         # don't support some escapes that are invalid in 're' (just \ddd so we don't mess with the back references)
-        cdef ExecResult res = pcre_exec(pcre_compile(r'(?:^|[^\\])(\\[89]\d\d)'), pattern)
+        cdef ExecResult res = pcre_exec(pcre_compile(r'(?:^|[^\\])(\\[89][0-9][0-9])'), pattern)
         if res.num_matches:
             raise PcreException('bogus escape: %r' % res.matches[1])
         # handle internal options with a different syntax from PCRE
@@ -942,7 +930,7 @@ cdef class SRE_Pattern(object):
         import re
         return re.compile(self.pattern, self.flags).scanner(*args)
 
-### code from the original 're' module:
+### template expansion code from the original 're' module:
 
 MARK = "mark"
 DIGITS = set("0123456789")
@@ -1023,12 +1011,10 @@ cdef inline literal(literal, p):
 cdef inline parse_template(source, pattern):
     # parse 're' replacement string into list of literals and
     # group references
-
     cdef:
         SRE_Tokenizer s = SRE_Tokenizer(source)
         int i
-
-    p = []
+        list p = []
     a = p.append
     sep = source[:0]
     if type(sep) is type(""):
