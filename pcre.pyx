@@ -1014,8 +1014,7 @@ cdef inline parse_template(source, pattern):
     cdef:
         SRE_Tokenizer s = SRE_Tokenizer(source)
         int i
-        list p = []
-    a = p.append
+        list p = [], groups, literals
     sep = source[:0]
     if type(sep) is type(""):
         makechar = chr
@@ -1051,7 +1050,7 @@ cdef inline parse_template(source, pattern):
                         index = pattern.groupindex[name]
                     except KeyError:
                         raise IndexError, "unknown group name"
-                a((MARK, index))
+                p.append((MARK, index))
             elif c == "0":
                 if s.next in OCTDIGITS:
                     this = this + s.get()
@@ -1068,7 +1067,7 @@ cdef inline parse_template(source, pattern):
                         isoctal = True
                         literal(makechar(int(this[1:], 8) & 0xff), p)
                 if not isoctal:
-                    a((MARK, int(this[1:])))
+                    p.append((MARK, int(this[1:])))
             else:
                 try:
                     this = makechar(ESCAPES[this][1])
@@ -1080,11 +1079,10 @@ cdef inline parse_template(source, pattern):
     # convert template to groups and literals lists
     i = 0
     groups = []
-    groupsappend = groups.append
     literals = [None] * len(p)
     for c, ss in p:
         if c is MARK:
-            groupsappend((i, ss))
+            groups.append((i, ss))
             # literal[i] is already None
         else:
             literals[i] = ss
@@ -1094,6 +1092,7 @@ cdef inline parse_template(source, pattern):
 cdef inline expand_template(template, matches, string):
     cdef:
         int index, group
+        list groups, literals
     groups, literals = template
     literals = literals[:]
     try:
