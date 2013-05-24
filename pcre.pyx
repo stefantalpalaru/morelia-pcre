@@ -253,7 +253,7 @@ cdef class Pcre:
     cdef readonly:
         bint info_available
         int groups
-        object groupindex
+        dict groupindex
     def __cinit__(self):
         self._c_pcre = NULL
         self.info_available = 0
@@ -292,10 +292,10 @@ cdef class ExecResult:
         int result
         int num_matches
         bint captured_all
-        object start_offsets
-        object end_offsets
-        object matches
-        object named_matches
+        list start_offsets
+        list end_offsets
+        list matches
+        dict named_matches
         object lastindex
         object lastgroup
     def __cinit__(self):
@@ -451,7 +451,7 @@ cpdef ExecResult pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None
         int i, n
         int start, end
         bint subject_is_unicode = isinstance(subject, unicode)
-        int last_index, end_offset, length, m_len, match_len
+        int last_index = 0, end_offset = -1, last_match_len = 0, match_len, py_match_len
 
     subject = process_text(subject)
     subject_length = len(subject)
@@ -484,6 +484,7 @@ cpdef ExecResult pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None
         exec_result.num_matches = rc
         for i in range(rc):
             match_len = cpcre.pcre_get_substring(subject, ovector, rc, i, &match_ptr)
+            py_match_len = match_len
             if match_len < 0:
                 raise PcreException('error getting the match #%d' % i)
             if ovector[i * 2] >= 0:
@@ -494,6 +495,7 @@ cpdef ExecResult pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None
                     #except:
                         #pass
                     match = tounicode_with_length(<char*>match_ptr, match_len)
+                    py_match_len = len(match)
                 exec_result.matches.append(match)
             else:
                 exec_result.matches.append(None)
@@ -508,10 +510,28 @@ cpdef ExecResult pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None
                     #pass
                 str_before = tounicode_with_length(<char*>subject, ovector[i * 2])
                 start = len(str_before)
-                end = start + len(match)
+                end = start + py_match_len
             exec_result.start_offsets.append(start)
             exec_result.end_offsets.append(end)
             cpcre.pcre_free_substring(match_ptr)
+            # lastindex and lastgroup
+            if i > 0:
+                if end > end_offset:
+                    end_offset = end
+                    last_match_len = py_match_len
+                    last_index = i
+                elif end == end_offset:
+                    if py_match_len > last_match_len:
+                        last_match_len = py_match_len
+                        last_index = i
+        # lastindex and lastgroup
+        if last_index:
+            exec_result.lastindex = last_index
+            for name, i in re.groupindex.iteritems():
+                if i == last_index:
+                    exec_result.lastgroup = name
+                    break
+
         # if the unmatched groups are at the end, PCRE doesn't bother reporting them
         # so we have to do it ourselves
         for i in range(oveccount / 3 - rc):
@@ -523,43 +543,17 @@ cpdef ExecResult pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None
         for substring_name in re.groupindex:
             n = re.groupindex[substring_name]
             exec_result.named_matches[substring_name] = exec_result.matches[n]
-
-        # lastindex and lastgroup
-        if re.groups > 0:
-            last_index = 0
-            end_offset = -1
-            length = 0
-            for i in range(1, exec_result.num_matches):
-                if exec_result.matches[i] is None:
-                    m_len = 0
-                else:
-                    m_len = len(exec_result.matches[i])
-                if exec_result.end_offsets[i] > end_offset:
-                    end_offset = exec_result.end_offsets[i]
-                    length = m_len
-                    last_index = i
-                elif exec_result.end_offsets[i] == end_offset:
-                    if m_len > length:
-                        length = m_len
-                        last_index = i
-            if last_index:
-                exec_result.lastindex = last_index
-                for name in re.groupindex:
-                    if re.groupindex[name] == last_index:
-                        exec_result.lastgroup = name
-                        break
     elif rc < 0:
         process_exec_error(rc)
 
     return exec_result
 
-cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int offset=0):
+cpdef list pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int offset=0):
     """
     translated and adapted from pcredemo.c
     """
     orig_subject = subject
     subject = process_text(subject)
-    exec_results = []
     cdef:
         ExecResult exec_result
         unsigned int option_bits
@@ -570,6 +564,7 @@ cpdef pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int o
         int subject_length = len(c_subject)
         int start_offset
         int end_offset
+        list exec_results = []
 
     # Before running the loop, check for UTF-8 and whether CRLF is a valid newline
     # sequence. First, find the options with which the regex was compiled; extract
@@ -820,7 +815,7 @@ cdef class SRE_Iterator:
         SRE_Pattern re
         int pos
         int endpos
-        object results
+        list results
         int index
     def __init__(self, string, orig_string, pos, endpos, re):
         self.orig_string = orig_string
@@ -850,7 +845,7 @@ cdef class SRE_Pattern(object):
         Pcre pcre_compiled
         PcreExtra pcre_extra
         int groups
-        object groupindex
+        dict groupindex
     def __init__(self, pattern, flags):
         self.pattern = pattern
         self.flags = flags
