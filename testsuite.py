@@ -4,6 +4,7 @@ from pcre import *
 from pprint import pprint
 import sys
 import re
+import argparse
 
 class Tester:
     options = {
@@ -12,7 +13,7 @@ class Tester:
         'm': PCRE_MULTILINE,
         's': PCRE_DOTALL,
         'x': PCRE_EXTENDED,
-        'Y': PCRE_NO_START_OPTIMISE,
+        'Y': PCRE_NO_START_OPTIMIZE,
     } # simple options
     testinput_line_no = 0
     testoutput_line_no = 0
@@ -70,15 +71,18 @@ class Tester:
         output = re.sub(r'\\\\', r'\\', output)
         return output
 
-    def test_match(self, regex, opts, data):
+    def test_match(self, regex, opts, data, use_jit=False):
         self.find_all = False
         self.show_rest = False
         self.do_mark = False
         self.do_study = False
+        self.force_study = False
+        self.no_force_study = False
         self.last_regex = regex
         self.last_opts = opts
         self.last_data = data
         self.set_options = 0
+        self.study_options = 0
         for opt in list(opts):
             if opt in self.options:
                 self.set_options |= self.options[opt]
@@ -91,14 +95,18 @@ class Tester:
             elif opt == 'S':
                 if self.do_study:
                     self.do_study = False
+                    self.no_force_study = True
                 else:
                     self.do_study = True
             else:
                 self.unhandled_opts.add(opt)
+        if use_jit:
+            self.study_options |= PCRE_STUDY_JIT_COMPILE
+            self.force_study = True
         compiled = pcre_compile(regex, self.set_options)
         extra = None
-        if self.do_study:
-            extra = pcre_study(compiled)
+        if self.do_study or (self.force_study and not self.no_force_study):
+            extra = pcre_study(compiled, self.study_options)
         if self.do_mark:
             if extra is None:
                 extra = pcre_create_empty_study()
@@ -115,18 +123,21 @@ class Tester:
     def verify_output(self, line, state=''):
         #if state != '':
             #print '%d: state = "%s"' % (self.testinput_line_no, state)
-        output_line = self.testoutput.readline()
-        self.testoutput_line_no += 1
-        if line != output_line:
-            self.failed_tests += 1
-            print 'error: testinput line %d, testoutput line %d' % (self.testinput_line_no, self.testoutput_line_no)
-            print 'expected:\n%sgot:\n%s' % (output_line, line)
-            print 'regex:\n"%s"\nopts:\n"%s"\ndata:\n"%s"\n' % (self.last_regex, self.last_opts, self.last_data)
+        if self.testoutput:
+            output_line = self.testoutput.readline()
+            self.testoutput_line_no += 1
+            if line != output_line:
+                self.failed_tests += 1
+                print 'error: testinput line %d, testoutput line %d' % (self.testinput_line_no, self.testoutput_line_no)
+                print 'expected:\n%sgot:\n%s' % (output_line, line)
+                print 'regex:\n"%s"\nopts:\n"%s"\ndata:\n"%s"\n' % (self.last_regex, self.last_opts, self.last_data)
+        else:
+            print line,
 
-def main(*args):
+def main(args):
     tester = Tester()
-    tester.testinput = open(args[0])
-    tester.testoutput = open(args[1])
+    tester.testinput = args.testinput
+    tester.testoutput = args.testoutput
     state = 'start' # 'start', 'empty line', 'regex', 'data'
     regex = ''
     multiline_regex = False
@@ -174,7 +185,7 @@ def main(*args):
         state = 'data'
         tester.verify_output(line, state)
         try:
-            results = tester.test_match(regex, opts, line)
+            results = tester.test_match(regex, opts, line, use_jit=args.jit)
             data = tester.data # the processed data
         except Exception, e:
             print 'error: ', e
@@ -199,20 +210,19 @@ def main(*args):
                 if result.mark is not None:
                     line_out = 'No match, mark = %s\n' % result.mark
                 tester.verify_output(line_out)
-    if tester.failed_tests:
-        print '\n%d failed tests' % tester.failed_tests
-    else:
-        print 'all tests passed'
-    if tester.unhandled_opts:
-        print 'unhandled options: %s' % ', '.join(tester.unhandled_opts)
-
-def usage():
-    print 'usage: %s testinput testoutput' % sys.argv[0]
+    if args.testoutput:
+        if tester.failed_tests:
+            print '\n%d failed tests' % tester.failed_tests
+        else:
+            print 'all tests passed'
+        if tester.unhandled_opts:
+            print 'unhandled options: %s' % ', '.join(tester.unhandled_opts)
 
 if __name__ == '__main__':
-    args = sys.argv[1:]
-    if len(args) != 2:
-        usage()
-        exit(1)
-    main(*args)
+    parser = argparse.ArgumentParser(description='morelia-pcre test runner')
+    parser.add_argument('--jit', action='store_true')
+    parser.add_argument('testinput', type=argparse.FileType('r'))
+    parser.add_argument('testoutput', nargs='?', type=argparse.FileType('r'))
+    args = parser.parse_args()
+    main(args)
 
