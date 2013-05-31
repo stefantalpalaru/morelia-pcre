@@ -112,7 +112,9 @@ class Tester:
             results = [result]
         return results
 
-    def verify_output(self, line):
+    def verify_output(self, line, state=''):
+        #if state != '':
+            #print '%d: state = "%s"' % (self.testinput_line_no, state)
         output_line = self.testoutput.readline()
         self.testoutput_line_no += 1
         if line != output_line:
@@ -134,13 +136,13 @@ def main(*args):
     sep = '' # regex separator
     for line in tester.testinput:
         tester.testinput_line_no += 1
-        if len(line) == 1 or len(line.strip()) == 0:
+        if len(line.strip()) == 0 and not (state == 'regex' and multiline_regex):
             # empty line
             state = 'empty line'
-            tester.verify_output(line)
+            tester.verify_output(line, state)
             continue
         if multiline_regex:
-            tester.verify_output(line)
+            tester.verify_output(line, state)
             regex_end = line.rfind(sep)
             if not(regex_end == -1 or line[regex_end - 1] == '\\'):
                 # last regex line
@@ -150,23 +152,27 @@ def main(*args):
             else:
                 regex += line
             continue
-        if line[0] != ' ' and state in ('start', 'empty line'):
+        if state in ['start', 'empty line']:
             # regex
             state = 'regex'
             sep = line[0]
+            regex_start = 0
+            if sep == ' ':
+                sep = line[1]
+                regex_start = 1
             regex_end = line.rfind(sep)
             if regex_end in [-1, 0] or line[regex_end - 1] == '\\':
                 multiline_regex = True
-                regex = line[1:]
-                tester.verify_output(line)
+                regex = line[regex_start+1:]
+                tester.verify_output(line, state)
                 continue
-            regex = line[1:regex_end]
+            regex = line[regex_start+1:regex_end]
             opts = line[regex_end+1:-1].strip()
-            tester.verify_output(line)
+            tester.verify_output(line, state)
             continue
         # it can be only data
         state = 'data'
-        tester.verify_output(line)
+        tester.verify_output(line, state)
         try:
             results = tester.test_match(regex, opts, line)
             data = tester.data # the processed data
@@ -190,7 +196,7 @@ def main(*args):
                     tester.verify_output(line_out)
             else:
                 line_out = 'No match\n'
-                if result.mark:
+                if result.mark is not None:
                     line_out = 'No match, mark = %s\n' % result.mark
                 tester.verify_output(line_out)
     if tester.failed_tests:

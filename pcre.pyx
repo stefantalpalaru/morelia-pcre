@@ -458,14 +458,14 @@ cpdef ExecResult pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None
     if extra is None:
         extra = PcreExtra.__new__(PcreExtra)
 
-    # mark handling
-    if extra._c_pcre_extra is not NULL and extra._c_pcre_extra.flags & cpcre._PCRE_EXTRA_MARK:
-        extra._c_pcre_extra.mark = &exec_result.markptr
-
     # get the pcre info if we don't have it already
     if re.info_available == 0:
         pcre_info(re, extra)
     
+    # mark handling
+    if extra._c_pcre_extra is not NULL and extra._c_pcre_extra.flags & cpcre._PCRE_EXTRA_MARK:
+        extra._c_pcre_extra.mark = &exec_result.markptr
+
     # replace the default with (the actual number of capturing subpatterns + 1) * 3
     oveccount = (re.groups + 1) * 3
 
