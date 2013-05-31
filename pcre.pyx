@@ -235,7 +235,8 @@ cdef unsigned int PCRE_EXEC_OPTIONS_MASK =\
 cdef unsigned int PCRE_STUDY_OPTIONS_MASK =\
         cpcre._PCRE_STUDY_JIT_COMPILE |\
         cpcre._PCRE_STUDY_JIT_PARTIAL_SOFT_COMPILE |\
-        cpcre._PCRE_STUDY_JIT_PARTIAL_HARD_COMPILE
+        cpcre._PCRE_STUDY_JIT_PARTIAL_HARD_COMPILE |\
+        cpcre._PCRE_STUDY_EXTRA_NEEDED
 
 cdef extern from "pyerrors.h":
     ctypedef class __builtin__.Exception [object PyBaseExceptionObject]:
@@ -385,7 +386,7 @@ cpdef inline PcreExtra pcre_study(Pcre re, int options=0):
         PcreExtra pcre_extra = PcreExtra.__new__(PcreExtra)
         const_char *error
 
-    sd = cpcre.pcre_study(re._c_pcre, options & PCRE_STUDY_OPTIONS_MASK, &error)
+    sd = cpcre.pcre_study(re._c_pcre, (options | cpcre._PCRE_STUDY_EXTRA_NEEDED) & PCRE_STUDY_OPTIONS_MASK, &error)
     if error is not NULL:
         raise PcreException(error)
     pcre_extra._c_pcre_extra = sd
