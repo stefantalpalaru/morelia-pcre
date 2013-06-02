@@ -399,7 +399,7 @@ cpdef PcreExtra pcre_create_empty_study():
     pcre_extra._c_pcre_extra.flags = 0
     return pcre_extra
 
-cdef pcre_fullinfo_wrapper(cpcre.pcre* code, cpcre.pcre_extra* extra, int what, void* where):
+cdef inline pcre_fullinfo_wrapper(cpcre.pcre* code, cpcre.pcre_extra* extra, int what, void* where):
     cdef int res = cpcre.pcre_fullinfo(code, extra, what, where)
     if res != 0:
         s = 'pcre_fullinfo() failed: %s'
@@ -414,7 +414,7 @@ cdef pcre_fullinfo_wrapper(cpcre.pcre* code, cpcre.pcre_extra* extra, int what, 
         else:
             raise PcreException(s % 'unknown')
 
-cpdef pcre_info(Pcre re, PcreExtra extra=None):
+cpdef inline pcre_info(Pcre re, PcreExtra extra=None):
     cdef:
         int capture_count
         int namecount
@@ -435,13 +435,13 @@ cpdef pcre_info(Pcre re, PcreExtra extra=None):
         pcre_fullinfo_wrapper(re._c_pcre, extra._c_pcre_extra, cpcre._PCRE_INFO_NAMETABLE, &name_table)
         pcre_fullinfo_wrapper(re._c_pcre, extra._c_pcre_extra, cpcre._PCRE_INFO_NAMEENTRYSIZE, &name_entry_size)
         tabptr = name_table
-        for i in range(namecount):
+        for i in xrange(namecount):
             n = (tabptr[0] << 8) | tabptr[1]
             substring_name = PyString_FromString(tabptr + 2)
             re.groupindex[substring_name] = n
             tabptr += name_entry_size
 
-cpdef ExecResult pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offset=0):
+cpdef inline ExecResult pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None, int offset=0):
     cdef:
         int rc
         int subject_length
@@ -539,7 +539,7 @@ cpdef ExecResult pcre_exec(Pcre re, subject, int options=0, PcreExtra extra=None
 
     return exec_result
 
-cpdef list pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int offset=0):
+cpdef inline list pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int offset=0):
     """
     translated and adapted from pcredemo.c
     """
@@ -642,7 +642,7 @@ cpdef list pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, 
             not_empty_options = cpcre._PCRE_NOTEMPTY_ATSTART | cpcre._PCRE_ANCHORED
     return exec_results
 
-cpdef pcre_split(Pcre re, string, int maxsplit=0, int options=0, PcreExtra extra=None):
+cpdef inline pcre_split(Pcre re, string, int maxsplit=0, int options=0, PcreExtra extra=None):
     cdef:
         int last_index = 0
         int counter = 0
@@ -662,7 +662,7 @@ cpdef pcre_split(Pcre re, string, int maxsplit=0, int options=0, PcreExtra extra
     return res
 
 # TODO: test this function
-cpdef pcre_fsubn(Pcre re, repl, string, int count=0, int options=0, PcreExtra extra=None):
+cpdef inline pcre_fsubn(Pcre re, repl, string, int count=0, int options=0, PcreExtra extra=None):
     cdef:
         int last_index = 0
         int counter = 0
@@ -688,7 +688,7 @@ cpdef pcre_fsubn(Pcre re, repl, string, int count=0, int options=0, PcreExtra ex
     pieces.append(orig_string[last_index:])
     return orig_string[:0].join(pieces), counter
 
-cpdef pcre_fsub(Pcre re, repl, string, int count=0, int options=0, PcreExtra extra=None):
+cpdef inline pcre_fsub(Pcre re, repl, string, int count=0, int options=0, PcreExtra extra=None):
     return pcre_fsubn(re, repl, string, count, options, extra)[0]
 
 cpdef inline pcre_subn(Pcre re, repl, string, int count=0, int options=0, PcreExtra extra=None):
@@ -727,7 +727,7 @@ cpdef inline pcre_subn(Pcre re, repl, string, int count=0, int options=0, PcreEx
         return pieces[0], counter # 're' bug 1140 compatibility
     return orig_string[:0].join(pieces), counter
 
-cpdef pcre_sub(Pcre re, repl, string, int count=0, int options=0, PcreExtra extra=None):
+cpdef inline pcre_sub(Pcre re, repl, string, int count=0, int options=0, PcreExtra extra=None):
     return pcre_subn(re, repl, string, count, options, extra)[0]
 
 cdef class SRE_Match(object):
@@ -741,8 +741,10 @@ cdef class SRE_Match(object):
         object lastindex
         object lastgroup
         tuple _regs
+
     def __cinit__(self):
         self._regs = None
+
     def __init__(self, exec_result, re, string, pos=0, endpos=None):
         self.pcre_exec_result = exec_result
         self.re = re
@@ -761,6 +763,7 @@ cdef class SRE_Match(object):
 
     cpdef expand(self, template):
         return pcre_expand(self.re.pcre_compiled, self.pcre_exec_result.matches, template, self.string)
+
     def group(self, *args):
         pargs = [] # processed args
         for arg in args:
@@ -781,20 +784,25 @@ cdef class SRE_Match(object):
         except:
             raise IndexError('no such group')
         return res
+
     cpdef groups(self, default=None):
         return tuple([default if m is None else m for m in self.pcre_exec_result.matches[1:]])
+
     cpdef groupdict(self, default=None):
         return dict([(n, default if m is None else m) for n, m in self.pcre_exec_result.named_matches.items()])
+
     cpdef start(self, group=0):
         try:
             return self.pcre_exec_result.start_offsets[group]
         except:
             raise IndexError('no such group')
+
     cpdef end(self, group=0):
         try:
             return self.pcre_exec_result.end_offsets[group]
         except:
             raise IndexError('no such group')
+
     cpdef span(self, group=0):
         return (self.start(group), self.end(group))
 
@@ -806,6 +814,7 @@ cdef class SRE_Iterator:
         int endpos
         list results
         int index
+
     def __init__(self, string, orig_string, pos, endpos, re):
         self.orig_string = orig_string
         self.re = re
@@ -813,8 +822,10 @@ cdef class SRE_Iterator:
         self.endpos = endpos
         self.results = pcre_find_all(re.pcre_compiled, string, re.used_flags, re.pcre_extra, pos)
         self.index = -1
+
     def __iter__(self):
         return self
+
     def __next__(self):
         try:
             self.index += 1
@@ -835,6 +846,7 @@ cdef class SRE_Pattern(object):
         PcreExtra pcre_extra
         int groups
         dict groupindex
+
     def __init__(self, pattern, flags):
         self.pattern = pattern
         self.flags = flags
@@ -854,6 +866,7 @@ cdef class SRE_Pattern(object):
         pcre_info(self.pcre_compiled, self.pcre_extra)
         self.groups = self.pcre_compiled.groups
         self.groupindex = self.pcre_compiled.groupindex
+
     cpdef search(self, string, pos=0, endpos=None):
         cdef:
             ExecResult exec_result
@@ -871,6 +884,7 @@ cdef class SRE_Pattern(object):
         if exec_result.num_matches == 0:
             return None
         return SRE_Match(exec_result, self, orig_string, pos, endpos)
+
     cpdef match(self, string, pos=0, endpos=None):
         if not isinstance(string, basestring):
             string = unicode(string)
@@ -881,10 +895,12 @@ cdef class SRE_Pattern(object):
         if not already_anchored:
             self.used_flags &= ~cpcre._PCRE_ANCHORED
         return res
+
     cpdef split(self, string, maxsplit=0):
         if not isinstance(string, basestring):
             raise TypeError('expected string or buffer')
         return pcre_split(self.pcre_compiled, string, maxsplit, self.used_flags, self.pcre_extra)
+
     cpdef findall(self, string, pos=0, endpos=None):
         cdef ExecResult result
         if not isinstance(string, basestring):
@@ -903,6 +919,7 @@ cdef class SRE_Pattern(object):
             else:
                 res.append(tuple(matches[1:]))
         return res
+
     def finditer(self, string, pos=0, endpos=None):
         if not isinstance(string, basestring):
             raise TypeError('expected string or buffer')
@@ -914,8 +931,10 @@ cdef class SRE_Pattern(object):
         else:
             endpos = len(string)
         return SRE_Iterator(string, orig_string, pos, endpos, self)
+
     cpdef _repl_wrapper(self, result):
         return self._subn_repl(SRE_Match(result, self, self._subn_string))
+
     cpdef subn(self, repl, string, count=0):
         used_repl = repl
         if hasattr(repl, '__call__'):
@@ -923,8 +942,10 @@ cdef class SRE_Pattern(object):
             self._subn_string = string
             used_repl = self._repl_wrapper
         return pcre_subn(self.pcre_compiled, used_repl, string, count, self.used_flags, extra=self.pcre_extra)
+
     cpdef sub(self, repl, string, count=0):
         return self.subn(repl, string, count)[0]
+
     def scanner(self, *args):
         """
         undocumented but appears in tests and might be used in the wild
@@ -954,10 +975,12 @@ cdef class SRE_Tokenizer:
     cdef:
         object string, next
         int index
+
     def __init__(self, string):
         self.string = string
         self.index = 0
         self.__next()
+
     cdef __next(self):
         if self.index >= len(self.string):
             self.next = None
@@ -971,18 +994,22 @@ cdef class SRE_Tokenizer:
             char = char + c
         self.index = self.index + len(char)
         self.next = char
+
     cdef match(self, _char, bint skip=1):
         if _char == self.next:
             if skip:
                 self.__next()
             return 1
         return 0
+
     cdef get(self):
         this = self.next
         self.__next()
         return this
+
     cdef tell(self):
         return self.index, self.next
+
     cdef seek(self, int index):
         self.index, self.next = index
 
@@ -1096,6 +1123,7 @@ cdef inline expand_template(template, matches, string):
     cdef:
         int index, group
         list groups, literals
+
     groups, literals = template
     literals = literals[:]
     try:
