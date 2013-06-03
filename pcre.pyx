@@ -445,7 +445,7 @@ cpdef inline ExecResult pcre_exec(Pcre re, subject, int options=0, PcreExtra ext
     cdef:
         int rc
         int subject_length
-        int oveccount = 30
+        int oveccount
         int *ovector
         ExecResult exec_result = ExecResult()
         const_char *match_ptr
@@ -536,10 +536,9 @@ cpdef inline ExecResult pcre_exec(Pcre re, subject, int options=0, PcreExtra ext
             exec_result.named_matches[substring_name] = exec_result.matches[n]
     elif rc < 0:
         process_exec_error(rc)
-
     return exec_result
 
-cpdef inline list pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int offset=0):
+cpdef inline list pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int offset=0, int count=0):
     """
     translated and adapted from pcredemo.c
     """
@@ -556,6 +555,7 @@ cpdef inline list pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra
         int start_offset
         int end_offset
         list exec_results = []
+        int counter = 0
 
     # Before running the loop, check for UTF-8 and whether CRLF is a valid newline
     # sequence. First, find the options with which the regex was compiled; extract
@@ -631,6 +631,9 @@ cpdef inline list pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra
 
         # Match succeded
         exec_results.append(exec_result)
+        counter += 1
+        if counter == count:
+            break
 
         # If the previous match was for an empty string, we are finished if we are
         # at the end of the subject. Otherwise, arrange to run another match at the
@@ -650,12 +653,12 @@ cpdef inline pcre_split(Pcre re, string, int maxsplit=0, int options=0, PcreExtr
     
     string = process_text(string)
     res = []
-    for result in pcre_find_all(re, string, options | cpcre._PCRE_NOTEMPTY, extra):
-        counter += 1
+    for result in pcre_find_all(re, string, options | cpcre._PCRE_NOTEMPTY, extra, count=maxsplit):
         res.append(string[last_index:result.start_offsets[0]])
         last_index = result.end_offsets[0]
         if len(result.matches) > 1:
             res.extend(result.matches[1:])
+        counter += 1
         if counter == maxsplit:
             break
     res.append(string[last_index:])
@@ -674,7 +677,7 @@ cpdef inline pcre_fsubn(Pcre re, repl, string, int count=0, int options=0, PcreE
     pieces = []
     if hasattr(repl, '__call__'):
         is_callable = 1
-    for result in pcre_find_all(re, string, options, extra):
+    for result in pcre_find_all(re, string, options, extra, count=count):
         counter += 1
         pieces.append(string[last_index:result.start_offsets[0]])
         last_index = result.end_offsets[0]
@@ -705,7 +708,7 @@ cpdef inline pcre_subn(Pcre re, repl, string, int count=0, int options=0, PcreEx
     if hasattr(repl, '__call__'):
         is_callable = 1
     last_match = ''
-    for result in pcre_find_all(re, string, options, extra):
+    for result in pcre_find_all(re, string, options, extra, count=count):
         start_offset = result.start_offsets[0]
         if last_match != '' and result.matches[0] == '' and last_index == start_offset:
             continue
