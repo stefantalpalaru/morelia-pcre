@@ -447,7 +447,7 @@ cpdef inline ExecResult pcre_exec(Pcre re, subject, int options=0, PcreExtra ext
         int subject_length
         int oveccount
         int *ovector
-        ExecResult exec_result = ExecResult()
+        ExecResult exec_result = ExecResult.__new__(ExecResult)
         const_char *match_ptr
         int i, n
         int start, end
