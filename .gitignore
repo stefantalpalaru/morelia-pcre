@@ -10,3 +10,6 @@ build
 vim.session
 tmp*
 _globals*
+benchmarks/alioth/data.txt
+benchmarks/alioth/fasta
+

@@ -1,0 +1,5 @@
+# benchmark from: http://benchmarksgame.alioth.debian.org/u32/program.php?test=regexdna&lang=python3&id=5
+go build fasta.go
+./fasta 5000000 > data.txt
+./run.sh
+

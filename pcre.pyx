@@ -454,7 +454,8 @@ cpdef inline ExecResult pcre_exec(Pcre re, subject, int options=0, PcreExtra ext
         bint subject_is_unicode = isinstance(subject, unicode)
         int last_index = 0, end_offset = -1, last_match_len = 0, match_len, py_match_len
 
-    subject = process_text(subject)
+    if subject_is_unicode:
+        subject = process_text(subject)
     subject_length = len(subject)
     if extra is None:
         extra = PcreExtra.__new__(PcreExtra)
