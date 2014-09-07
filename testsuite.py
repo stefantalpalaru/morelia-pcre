@@ -189,27 +189,28 @@ def main(args):
             data = tester.data # the processed data
         except Exception, e:
             print 'error: ', e
-        for result in results:
-            if result.num_matches:
-                for i in xrange(result.num_matches):
-                    match = tester.process_output(result.matches[i])
-                    if result.matches[i] is None:
-                        # unset match
-                        match = '<unset>'
-                    line_out = '%2d: %s\n' % (i, match)
-                    tester.verify_output(line_out)
-                    if tester.show_rest and i == 0:
-                        line_out = '%2d+ %s\n' % (i, data[result.end_offsets[i]:])
+        else:
+            for result in results:
+                if result.num_matches:
+                    for i in xrange(result.num_matches):
+                        match = tester.process_output(result.matches[i])
+                        if result.matches[i] is None:
+                            # unset match
+                            match = '<unset>'
+                        line_out = '%2d: %s\n' % (i, match)
                         tester.verify_output(line_out)
-                if result.mark:
-                    #print 'mark:\n"%s"\n' % result.mark
-                    line_out = 'MK: %s\n' % tester.process_output(result.mark)
+                        if tester.show_rest and i == 0:
+                            line_out = '%2d+ %s\n' % (i, data[result.end_offsets[i]:])
+                            tester.verify_output(line_out)
+                    if result.mark:
+                        #print 'mark:\n"%s"\n' % result.mark
+                        line_out = 'MK: %s\n' % tester.process_output(result.mark)
+                        tester.verify_output(line_out)
+                else:
+                    line_out = 'No match\n'
+                    if result.mark is not None:
+                        line_out = 'No match, mark = %s\n' % result.mark
                     tester.verify_output(line_out)
-            else:
-                line_out = 'No match\n'
-                if result.mark is not None:
-                    line_out = 'No match, mark = %s\n' % result.mark
-                tester.verify_output(line_out)
     if args.testoutput:
         if tester.failed_tests:
             print '\n%d failed tests' % tester.failed_tests
