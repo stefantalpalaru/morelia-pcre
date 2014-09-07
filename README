@@ -10,7 +10,7 @@ Testing:
 ./setup.py build_ext -i && { ./test_re.py; ./testsuite.py testdata/testinput1 testdata/testoutput1; }
 
 Code and issue tracker available at: https://github.com/stefantalpalaru/morelia-pcre
-Tested with pcre-8.33, cython-0.19.1 and python-2.7.5
+Tested with pcre-8.35, cython-0.20.2 and python-2.7.8
 
 Sphinx docs: http://stefantalpalaru.github.com/morelia-pcre/index.html
 
