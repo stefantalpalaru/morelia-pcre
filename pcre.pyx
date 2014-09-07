@@ -1,8 +1,10 @@
 #cython: embedsignature=True, infer_types=True, profile=True
 
 cimport cpcre, cython
-from libc.stdlib cimport malloc
-from libc.string cimport const_char
+from libc.stdlib cimport malloc, const_char, free
+from libc.stdint cimport uint32_t
+ctypedef uint32_t uint_t
+from libc.string cimport strdup
 
 # Public options. Some are compile-time only, some are run-time only, and some
 # are both, so we keep them all distinct. However, almost all the bits in the
@@ -295,6 +297,7 @@ cdef class ExecResult:
     cdef:
         int *ovector
         public unsigned char *markptr
+        public char *mark_copy_ptr
     cdef readonly:
         int offset
         int result
@@ -315,6 +318,7 @@ cdef class ExecResult:
         self.named_matches = {}
         self.ovector = NULL
         self.markptr = NULL
+        self.mark_copy_ptr = NULL
         self.lastindex = None
         self.lastgroup = None
     def __dealloc__(self):
@@ -322,9 +326,9 @@ cdef class ExecResult:
             cpcre.pcre_free(self.ovector)
     property mark:
         def __get__(self):
-            if self.markptr is NULL:
+            if self.mark_copy_ptr is NULL:
                 return None
-            return self.markptr
+            return self.mark_copy_ptr
 
 @cython.profile(False)
 cdef inline process_text(text):
@@ -406,7 +410,7 @@ cpdef PcreExtra pcre_create_empty_study():
     pcre_extra._c_pcre_extra.flags = 0
     return pcre_extra
 
-cdef inline pcre_fullinfo_wrapper(cpcre.pcre* code, cpcre.pcre_extra* extra, int what, void* where):
+cdef inline pcre_fullinfo_c_wrapper(cpcre.pcre* code, cpcre.pcre_extra* extra, int what, void* where):
     cdef int res = cpcre.pcre_fullinfo(code, extra, what, where)
     if res != 0:
         s = 'pcre_fullinfo() failed: %s'
@@ -418,8 +422,69 @@ cdef inline pcre_fullinfo_wrapper(cpcre.pcre* code, cpcre.pcre_extra* extra, int
             raise PcreException(s % 'the pattern was compiled with different endianness')
         elif res == cpcre._PCRE_ERROR_BADOPTION:
             raise PcreException(s % 'invalid option number')
+        elif res == cpcre._PCRE_ERROR_UNSET:
+            raise PcreException(s % 'the requested field is not set')
         else:
             raise PcreException(s % 'unknown')
+
+cpdef pcre_fullinfo_wrapper(Pcre re, PcreExtra extra, int what):
+    cdef:
+        size_t size_t_var
+        int int_var
+        uint_t uint_t_var
+        unsigned int uint_var
+        char *char_ptr_var
+        unsigned long int ulint_var
+
+    if what in [ # size_t
+        cpcre._PCRE_INFO_SIZE,
+        cpcre._PCRE_INFO_JITSIZE,
+        cpcre._PCRE_INFO_STUDYSIZE,
+    ]:
+        pcre_fullinfo_c_wrapper(re._c_pcre, extra._c_pcre_extra, what, &size_t_var)
+        return size_t_var
+    elif what in [ # int
+        cpcre._PCRE_INFO_BACKREFMAX,
+        cpcre._PCRE_INFO_CAPTURECOUNT,
+        cpcre._PCRE_INFO_FIRSTCHARACTERFLAGS,
+        cpcre._PCRE_INFO_HASCRORLF,
+        cpcre._PCRE_INFO_JCHANGED,
+        cpcre._PCRE_INFO_JIT,
+        cpcre._PCRE_INFO_LASTLITERAL,
+        cpcre._PCRE_INFO_MATCH_EMPTY,
+        cpcre._PCRE_INFO_MAXLOOKBEHIND,
+        cpcre._PCRE_INFO_MINLENGTH,
+        cpcre._PCRE_INFO_NAMECOUNT,
+        cpcre._PCRE_INFO_NAMEENTRYSIZE,
+        cpcre._PCRE_INFO_OKPARTIAL,
+        cpcre._PCRE_INFO_REQUIREDCHARFLAGS,
+    ]:
+        pcre_fullinfo_c_wrapper(re._c_pcre, extra._c_pcre_extra, what, &int_var)
+        return int_var
+    elif what in [ # uint_t
+        cpcre._PCRE_INFO_FIRSTCHARACTER,
+    ]:
+        pcre_fullinfo_c_wrapper(re._c_pcre, extra._c_pcre_extra, what, &uint_t_var)
+        return uint_t_var
+    elif what in [ # uint
+        cpcre._PCRE_INFO_MATCHLIMIT,
+        cpcre._PCRE_INFO_RECURSIONLIMIT,
+        cpcre._PCRE_INFO_REQUIREDCHAR,
+    ]:
+        pcre_fullinfo_c_wrapper(re._c_pcre, extra._c_pcre_extra, what, &uint_var)
+        return uint_var
+    elif what in [ # char*
+        cpcre._PCRE_INFO_NAMETABLE,
+    ]:
+        pcre_fullinfo_c_wrapper(re._c_pcre, extra._c_pcre_extra, what, &char_ptr_var)
+        return char_ptr_var
+    elif what in [ # unsigned long int
+        cpcre._PCRE_INFO_OPTIONS,
+    ]:
+        pcre_fullinfo_c_wrapper(re._c_pcre, extra._c_pcre_extra, what, &ulint_var)
+        return ulint_var
+    else:
+        raise PcreException('unsuported info type')
 
 cpdef inline pcre_info(Pcre re, PcreExtra extra=None):
     cdef:
@@ -433,14 +498,14 @@ cpdef inline pcre_info(Pcre re, PcreExtra extra=None):
     re.info_available = 1
 
     # number of captures
-    pcre_fullinfo_wrapper(re._c_pcre, extra._c_pcre_extra, cpcre._PCRE_INFO_CAPTURECOUNT, &capture_count)
+    pcre_fullinfo_c_wrapper(re._c_pcre, extra._c_pcre_extra, cpcre._PCRE_INFO_CAPTURECOUNT, &capture_count)
     re.groups = capture_count
     
     # named substrings
-    pcre_fullinfo_wrapper(re._c_pcre, extra._c_pcre_extra, cpcre._PCRE_INFO_NAMECOUNT, &namecount)
+    pcre_fullinfo_c_wrapper(re._c_pcre, extra._c_pcre_extra, cpcre._PCRE_INFO_NAMECOUNT, &namecount)
     if namecount > 0:
-        pcre_fullinfo_wrapper(re._c_pcre, extra._c_pcre_extra, cpcre._PCRE_INFO_NAMETABLE, &name_table)
-        pcre_fullinfo_wrapper(re._c_pcre, extra._c_pcre_extra, cpcre._PCRE_INFO_NAMEENTRYSIZE, &name_entry_size)
+        pcre_fullinfo_c_wrapper(re._c_pcre, extra._c_pcre_extra, cpcre._PCRE_INFO_NAMETABLE, &name_table)
+        pcre_fullinfo_c_wrapper(re._c_pcre, extra._c_pcre_extra, cpcre._PCRE_INFO_NAMEENTRYSIZE, &name_entry_size)
         tabptr = name_table
         for i in xrange(namecount):
             n = (tabptr[0] << 8) | tabptr[1]
@@ -544,6 +609,12 @@ cpdef inline ExecResult pcre_exec(Pcre re, subject, int options=0, PcreExtra ext
             exec_result.named_matches[substring_name] = exec_result.matches[n]
     elif rc < 0:
         process_exec_error(rc)
+    
+    if exec_result.markptr:
+        if exec_result.mark_copy_ptr:
+            free(exec_result.mark_copy_ptr)
+        exec_result.mark_copy_ptr = strdup(<const char*>exec_result.markptr)
+
     return exec_result
 
 cpdef inline list pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra=None, int offset=0, int count=0):
@@ -569,7 +640,7 @@ cpdef inline list pcre_find_all(Pcre re, subject, int options=0, PcreExtra extra
     # sequence. First, find the options with which the regex was compiled; extract
     # the UTF-8 state, and mask off all but the newline options.
 
-    pcre_fullinfo_wrapper(re._c_pcre, NULL, cpcre._PCRE_INFO_OPTIONS, &option_bits);
+    pcre_fullinfo_c_wrapper(re._c_pcre, NULL, cpcre._PCRE_INFO_OPTIONS, &option_bits);
     utf8 = option_bits & cpcre._PCRE_UTF8
     option_bits &= cpcre._PCRE_NEWLINE_CR|cpcre._PCRE_NEWLINE_LF | cpcre._PCRE_NEWLINE_CRLF | cpcre._PCRE_NEWLINE_ANY | cpcre._PCRE_NEWLINE_ANYCRLF
 

@@ -83,6 +83,7 @@ class Tester:
         self.last_data = data
         self.set_options = 0
         self.study_options = 0
+        self.do_showinfo = False
         for opt in list(opts):
             if opt in self.options:
                 self.set_options |= self.options[opt]
@@ -98,6 +99,8 @@ class Tester:
                     self.no_force_study = True
                 else:
                     self.do_study = True
+            elif opt == 'I':
+                    self.do_showinfo = True
             else:
                 self.unhandled_opts.add(opt)
         if use_jit:
@@ -111,6 +114,32 @@ class Tester:
             if extra is None:
                 extra = pcre_create_empty_study()
             extra.flags |= PCRE_EXTRA_MARK
+        if self.do_showinfo:
+            try:
+                info_count = pcre_fullinfo_wrapper(compiled, extra, PCRE_INFO_CAPTURECOUNT)
+                info_backrefmax = pcre_fullinfo_wrapper(compiled, extra, PCRE_INFO_BACKREFMAX)
+                info_first_char = pcre_fullinfo_wrapper(compiled, extra, PCRE_INFO_FIRSTCHARACTER)
+                info_first_char_set = pcre_fullinfo_wrapper(compiled, extra, PCRE_INFO_FIRSTCHARACTERFLAGS)
+                info_need_char = pcre_fullinfo_wrapper(compiled, extra, PCRE_INFO_REQUIREDCHAR)
+                info_need_char_set = pcre_fullinfo_wrapper(compiled, extra, PCRE_INFO_REQUIREDCHARFLAGS)
+                info_nameentrysize = pcre_fullinfo_wrapper(compiled, extra, PCRE_INFO_NAMEENTRYSIZE)
+                info_namecount = pcre_fullinfo_wrapper(compiled, extra, PCRE_INFO_NAMECOUNT)
+                info_nametable = pcre_fullinfo_wrapper(compiled, extra, PCRE_INFO_NAMETABLE)
+                info_okpartial = pcre_fullinfo_wrapper(compiled, extra, PCRE_INFO_OKPARTIAL)
+                info_jchanged = pcre_fullinfo_wrapper(compiled, extra, PCRE_INFO_JCHANGED)
+                info_hascrorlf = pcre_fullinfo_wrapper(compiled, extra, PCRE_INFO_HASCRORLF)
+                info_match_empty = pcre_fullinfo_wrapper(compiled, extra, PCRE_INFO_MATCH_EMPTY)
+                info_maxlookbehind = pcre_fullinfo_wrapper(compiled, extra, PCRE_INFO_MAXLOOKBEHIND)
+
+                self.verify_output("Capturing subpattern count = %d\n" % info_count)
+                if info_backrefmax > 0:
+                    self.verify_output( "Max back reference = %d\n" % backrefmax)
+                if info_maxlookbehind > 0:
+                    self.verify_output("Max lookbehind = %d\n" % maxlookbehind)
+            except Exception, e:
+                print e
+                pass
+        self.verify_output(data, 'data')
         # process the data after compilation and study so exec-only options can be added now
         self.data = self.process_data(data)
         if self.find_all:
@@ -138,7 +167,7 @@ def main(args):
     tester = Tester()
     tester.testinput = args.testinput
     tester.testoutput = args.testoutput
-    state = 'start' # 'start', 'empty line', 'regex', 'data'
+    state = 'start' # 'start', 'empty line', 'regex', 'data', 'comment'
     regex = ''
     multiline_regex = False
     opts = ''
@@ -147,9 +176,20 @@ def main(args):
     sep = '' # regex separator
     for line in tester.testinput:
         tester.testinput_line_no += 1
-        if len(line.strip()) == 0 and not (state == 'regex' and multiline_regex):
+        if len(line.strip()) == 0 and not state == 'regex':
             # empty line
             state = 'empty line'
+            tester.verify_output(line, state)
+            continue
+        if line.startswith('/--') or (state == 'empty line' and line.startswith('  ')):
+            state = 'comment'
+            tester.verify_output(line, state)
+            continue
+        if line.startswith('< ') and not (state == 'regex' and multiline_regex):
+            state = 'comment'
+            tester.verify_output(line, state)
+            continue
+        if state == 'comment':
             tester.verify_output(line, state)
             continue
         if multiline_regex:
@@ -183,34 +223,36 @@ def main(args):
             continue
         # it can be only data
         state = 'data'
-        tester.verify_output(line, state)
         try:
             results = tester.test_match(regex, opts, line, use_jit=args.jit)
             data = tester.data # the processed data
         except Exception, e:
             print 'error: ', e
         else:
-            for result in results:
-                if result.num_matches:
-                    for i in xrange(result.num_matches):
-                        match = tester.process_output(result.matches[i])
-                        if result.matches[i] is None:
-                            # unset match
-                            match = '<unset>'
-                        line_out = '%2d: %s\n' % (i, match)
-                        tester.verify_output(line_out)
-                        if tester.show_rest and i == 0:
-                            line_out = '%2d+ %s\n' % (i, data[result.end_offsets[i]:])
+            if len(line.strip()):
+                for result in results:
+                    if result.num_matches:
+                        for i in xrange(result.num_matches):
+                            match = tester.process_output(result.matches[i])
+                            if result.matches[i] is None:
+                                # unset match
+                                match = '<unset>'
+                            line_out = '%2d: %s\n' % (i, match)
                             tester.verify_output(line_out)
-                    if result.mark:
-                        #print 'mark:\n"%s"\n' % result.mark
-                        line_out = 'MK: %s\n' % tester.process_output(result.mark)
+                            if tester.show_rest and i == 0:
+                                line_out = '%2d+ %s\n' % (i, data[result.end_offsets[i]:])
+                                tester.verify_output(line_out)
+                        if result.mark:
+                            #print 'mark:\n"%s"\n' % result.mark
+                            line_out = 'MK: %s\n' % tester.process_output(result.mark)
+                            tester.verify_output(line_out)
+                    else:
+                        line_out = 'No match\n'
+                        if result.mark is not None:
+                            line_out = 'No match, mark = %s\n' % result.mark
                         tester.verify_output(line_out)
-                else:
-                    line_out = 'No match\n'
-                    if result.mark is not None:
-                        line_out = 'No match, mark = %s\n' % result.mark
-                    tester.verify_output(line_out)
+        if len(line.strip()) == 0:
+            state = 'empty line'
     if args.testoutput:
         if tester.failed_tests:
             print '\n%d failed tests' % tester.failed_tests
