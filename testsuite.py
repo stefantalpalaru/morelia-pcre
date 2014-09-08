@@ -6,6 +6,15 @@ import sys
 import re
 import argparse
 
+PCRE_NEWLINE_BITS =\
+        PCRE_NEWLINE_CR |\
+        PCRE_NEWLINE_LF |\
+        PCRE_NEWLINE_ANY |\
+        PCRE_NEWLINE_ANYCRLF
+
+PCRE_RCH_CASELESS = 0x00000080 # caseless requested char
+PCRE_FCH_CASELESS = 0x00000020  # caseless first char
+
 class Tester:
     options = {
         'i': PCRE_CASELESS,
@@ -13,6 +22,7 @@ class Tester:
         'm': PCRE_MULTILINE,
         's': PCRE_DOTALL,
         'x': PCRE_EXTENDED,
+        'X': PCRE_EXTRA,
         'Y': PCRE_NO_START_OPTIMIZE,
     } # simple options
     testinput_line_no = 0
@@ -41,7 +51,7 @@ class Tester:
         # '@' doesn't need escaping
         data = re.sub(r'\\@', '@', data)
         ### option setting
-        self.set_options = 0
+        #self.set_options = 0
         # \A
         opt_pat = r'([^\\]?)\\A'
         match = re.search(opt_pat, data)
@@ -71,7 +81,7 @@ class Tester:
         output = re.sub(r'\\\\', r'\\', output)
         return output
 
-    def test_match(self, regex, opts, data, use_jit=False):
+    def test_match(self, regex, opts, data, use_jit=False, first_data=False):
         self.find_all = False
         self.show_rest = False
         self.do_mark = False
@@ -106,7 +116,13 @@ class Tester:
         if use_jit:
             self.study_options |= PCRE_STUDY_JIT_COMPILE
             self.force_study = True
-        compiled = pcre_compile(regex, self.set_options)
+        self.data = self.process_data(data)
+        try:
+            compiled = pcre_compile(regex, self.set_options)
+        except Exception, e:
+            self.verify_output("%s\n" % e)
+            self.verify_output(data, 'data')
+            return
         extra = None
         if self.do_study or (self.force_study and not self.no_force_study):
             extra = pcre_study(compiled, self.study_options)
@@ -114,7 +130,7 @@ class Tester:
             if extra is None:
                 extra = pcre_create_empty_study()
             extra.flags |= PCRE_EXTRA_MARK
-        if self.do_showinfo:
+        if self.do_showinfo and first_data:
             try:
                 info_count = pcre_fullinfo_wrapper(compiled, extra, PCRE_INFO_CAPTURECOUNT)
                 info_backrefmax = pcre_fullinfo_wrapper(compiled, extra, PCRE_INFO_BACKREFMAX)
@@ -130,18 +146,84 @@ class Tester:
                 info_hascrorlf = pcre_fullinfo_wrapper(compiled, extra, PCRE_INFO_HASCRORLF)
                 info_match_empty = pcre_fullinfo_wrapper(compiled, extra, PCRE_INFO_MATCH_EMPTY)
                 info_maxlookbehind = pcre_fullinfo_wrapper(compiled, extra, PCRE_INFO_MAXLOOKBEHIND)
+                info_options = pcre_fullinfo_wrapper(compiled, extra, PCRE_INFO_OPTIONS)
 
                 self.verify_output("Capturing subpattern count = %d\n" % info_count)
                 if info_backrefmax > 0:
-                    self.verify_output( "Max back reference = %d\n" % backrefmax)
+                    self.verify_output( "Max back reference = %d\n" % info_backrefmax)
                 if info_maxlookbehind > 0:
-                    self.verify_output("Max lookbehind = %d\n" % maxlookbehind)
+                    self.verify_output("Max lookbehind = %d\n" % info_maxlookbehind)
+                try:
+                    info_match_limit = pcre_fullinfo_wrapper(compiled, extra, PCRE_INFO_MATCHLIMIT)
+                    self.verify_output("Match limit = %d\n" % info_match_limit)
+                except:
+                    pass
+                try:
+                    info_recursion_limit = pcre_fullinfo_wrapper(compiled, extra, PCRE_INFO_RECURSIONLIMIT)
+                    self.verify_output("Recursion limit = %d\n" % info_recursion_limit)
+                except:
+                    pass
+                if info_namecount:
+                    self.verify_output("Named capturing subpatterns:\n")
+
+                if not info_okpartial:
+                    self.verify_output("Partial matching not supported\n")
+                if info_hascrorlf:
+                    self.verify_output("Contains explicit CR or LF match\n")
+                if info_match_empty:
+                    self.verify_output("May match empty string\n")
+                if info_options == 0:
+                    self.verify_output("No options\n")
+                else:
+                    self.verify_output("Options:%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s\n" % (
+                        " anchored" if ((info_options & PCRE_ANCHORED) != 0) else "",
+                        " caseless" if ((info_options & PCRE_CASELESS) != 0) else "",
+                        " extended" if ((info_options & PCRE_EXTENDED) != 0) else "",
+                        " multiline" if ((info_options & PCRE_MULTILINE) != 0) else "",
+                        " firstline" if ((info_options & PCRE_FIRSTLINE) != 0) else "",
+                        " dotall" if ((info_options & PCRE_DOTALL) != 0) else "",
+                        " bsr_anycrlf" if ((info_options & PCRE_BSR_ANYCRLF) != 0) else "",
+                        " bsr_unicode" if ((info_options & PCRE_BSR_UNICODE) != 0) else "",
+                        " dollar_endonly" if ((info_options & PCRE_DOLLAR_ENDONLY) != 0) else "",
+                        " extra" if ((info_options & PCRE_EXTRA) != 0) else "",
+                        " ungreedy" if ((info_options & PCRE_UNGREEDY) != 0) else "",
+                        " no_auto_capture" if ((info_options & PCRE_NO_AUTO_CAPTURE) != 0) else "",
+                        " no_auto_possessify" if ((info_options & PCRE_NO_AUTO_POSSESS) != 0) else "",
+                        " utf" if ((info_options & PCRE_UTF8) != 0) else "",
+                        " ucp" if ((info_options & PCRE_UCP) != 0) else "",
+                        " no_utf_check" if ((info_options & PCRE_NO_UTF8_CHECK) != 0) else "",
+                        " no_start_optimize" if ((info_options & PCRE_NO_START_OPTIMIZE) != 0) else "",
+                        " dupnames" if ((info_options & PCRE_DUPNAMES) != 0) else "",
+                        " never_utf" if ((info_options & PCRE_NEVER_UTF) != 0) else "",
+                    ))
+                if info_jchanged:
+                    self.verify_output("Duplicate name status changes\n")
+                if info_options & PCRE_NEWLINE_BITS == PCRE_NEWLINE_CR:
+                    self.verify_output("Forced newline sequence: CR\n")
+                elif info_options & PCRE_NEWLINE_BITS == PCRE_NEWLINE_LF:
+                    self.verify_output("Forced newline sequence: LF\n")
+                elif info_options & PCRE_NEWLINE_BITS == PCRE_NEWLINE_CRLF:
+                    self.verify_output("Forced newline sequence: CRLF\n")
+                elif info_options & PCRE_NEWLINE_BITS == PCRE_NEWLINE_ANYCRLF:
+                    self.verify_output("Forced newline sequence: ANYCRLF\n")
+                elif info_options & PCRE_NEWLINE_BITS == PCRE_NEWLINE_ANY:
+                    self.verify_output("Forced newline sequence: ANY\n")
+                if info_first_char_set == 2:
+                    self.verify_output("First char at start or follows newline\n")
+                elif info_first_char_set == 1:
+                    info_caseless = "" if ((info_options & PCRE_FCH_CASELESS) == 0) else " (caseless)"
+                    self.verify_output("First char = \'%c\'%s\n" % (info_first_char, info_caseless))
+                else:
+                    self.verify_output("No first char\n")
+                if info_need_char_set == 0:
+                    self.verify_output("No need char\n")
+                else:
+                    info_caseless = "" if ((info_options & PCRE_RCH_CASELESS) == 0) else " (caseless)"
+                    self.verify_output("Need char = \'%c\'%s\n" % (info_need_char, info_caseless))
             except Exception, e:
                 print e
                 pass
         self.verify_output(data, 'data')
-        # process the data after compilation and study so exec-only options can be added now
-        self.data = self.process_data(data)
         if self.find_all:
             results = pcre_find_all(compiled, self.data, extra=extra)
         else:
@@ -159,7 +241,7 @@ class Tester:
                 self.failed_tests += 1
                 print 'error: testinput line %d, testoutput line %d' % (self.testinput_line_no, self.testoutput_line_no)
                 print 'expected:\n%sgot:\n%s' % (output_line, line)
-                print 'regex:\n"%s"\nopts:\n"%s"\ndata:\n"%s"\n' % (self.last_regex, self.last_opts, self.last_data)
+                print 'regex:\n"%s"\nopts:\n"%s"\nset_options:\n"0x%X"\ndata:\n"%s"\n' % (self.last_regex, self.last_opts, self.set_options, self.last_data)
         else:
             print line,
 
@@ -222,9 +304,12 @@ def main(args):
             tester.verify_output(line, state)
             continue
         # it can be only data
+        first_data = False
+        if state != 'data':
+            first_data = True
         state = 'data'
         try:
-            results = tester.test_match(regex, opts, line, use_jit=args.jit)
+            results = tester.test_match(regex, opts, line, use_jit=args.jit, first_data=first_data)
             data = tester.data # the processed data
         except Exception, e:
             print 'error: ', e

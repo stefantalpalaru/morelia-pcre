@@ -387,7 +387,7 @@ cpdef inline Pcre pcre_compile(pattern, int options=0):
     pattern = process_text(pattern)
     re = cpcre.pcre_compile(pattern, options & PCRE_COMPILE_OPTIONS_MASK, &error, &erroffset, NULL)
     if re is NULL:
-        raise PcreException('PCRE compilation failed at offset %d (%s)' % (erroffset, error))
+        raise PcreException('Failed: %s at offset %d' % (error, erroffset))
     pcre._c_pcre = re
     return pcre
 
