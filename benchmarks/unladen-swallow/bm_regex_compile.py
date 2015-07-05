@@ -29,6 +29,9 @@ class EmptyCache(object):
     def __setitem__(self, *args):
         pass
 
+    def __getitem__(self, key):
+        raise KeyError
+
     def __len__(self):
         return 0
 
